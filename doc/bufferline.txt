@@ -11,6 +11,7 @@ CONTENTS                                      *bufferline*
 Introduction...........................: |bufferline-introduction|
 Usage..................................: |bufferline-usage|
 Configuration..........................: |bufferline-configuration|
+Multiline buffer tabs..................: |bufferline-multiline|
 Hover Events...........................: |bufferline-hover-events|
 Styling................................: |bufferline-styling|
 Style Presets..........................: |bufferline-style-presets|
@@ -68,6 +69,8 @@ The available configuration are:
     bufferline.setup {
         options = {
             mode = "buffers", -- set to "tabs" to only show tabpages instead
+            -- See |bufferline-multiline| (Neovim 0.12+ when enabled).
+            multiline = { enabled = false, max_rows = 3 },
             style_preset = bufferline.style_preset.default, -- or bufferline.style_preset.minimal,
             themable = true | false, -- allows highlight groups to be overriden i.e. sets highlights as default
             numbers = "none" | "ordinal" | "buffer_id" | "both" | function({ ordinal, id, lower, raise }): string,
@@ -177,6 +180,84 @@ The available configuration are:
         }
     }
 <
+==============================================================================
+MULTILINE BUFFER TABS                                    *bufferline-multiline*
+
+Multiline is opt-in. The native single-row renderer remains the default, with
+its existing defaults and Neovim 0.8+ minimum unchanged. Multiline requires
+Neovim 0.12+ and `options.mode = "buffers"`.
+
+To try it, target MOSconfig/bufferline.nvim on branch feat/multiline-buffer-tabs
+instead of an upstream tag. No release version is specified for this feature:
+https://github.com/MOSconfig/bufferline.nvim/tree/feat/multiline-buffer-tabs
+
+Add multiline to your complete configuration. Each setup() call takes a complete
+configuration, not an incremental options update. Retain the original table so
+native-only settings can be restored without losing custom options/highlights.
+>lua
+    local bufferline = require("bufferline")
+    local original_config = {
+        options = {
+            -- Keep all your existing options here.
+        },
+        -- Keep other setup fields, such as highlights, here too.
+    }
+    local multiline_config = vim.deepcopy(original_config)
+    multiline_config.options = multiline_config.options or {}
+    multiline_config.options.mode = "buffers"
+    multiline_config.options.multiline = { enabled = true, max_rows = 3 }
+    bufferline.setup(multiline_config)
+<
+`options.multiline.enabled` defaults to false. `max_rows` defaults to 3 and must
+be a positive integer. It caps buffer rows, excluding Neovim's normal split
+separator/statusline space. The header is a reserved top split, not a taller
+native tabline, so both kinds of rows reduce the editing area.
+
+Compatibility ~
+
+When omitted, `show_tab_indicators` and the global `show_close_icon` become false
+in multiline mode only. Explicit true values are rejected: remove these
+native-only overrides or set them to false in the multiline copy. Per-buffer
+close icons (`show_buffer_close_icons`) remain supported. Tabpage mode
+(`mode = "tabs"`), `custom_areas`, and hover reveal are unsupported. Remove custom
+areas and disable `hover.enabled` before enabling multiline.
+
+Unicode labels, icons, diagnostics, groups, pinned buffers, sidebar offsets, and
+buffer/close/group click actions work across rows. Overflow controls and the
+mouse wheel scroll rows beyond the cap. Changing the current buffer reveals its
+row. Existing user mouse mappings run first and may consume click or wheel
+events before bufferline receives them; bufferline does not override that
+precedence. See |bufferline-mouse-actions| for configurable click commands.
+
+Restoring single-row mode ~
+
+Use a copy of the original complete configuration, not just a table containing
+the multiline flag. This also restores any native-only settings you removed
+from the multiline copy.
+>lua
+    local single_row = vim.deepcopy(original_config)
+    single_row.options = single_row.options or {}
+    single_row.options.multiline = single_row.options.multiline or {}
+    single_row.options.multiline.enabled = false
+    bufferline.setup(single_row)
+<
+Lifecycle and limitations ~
+
+- Closing the header or using |:only| suspends multiline globally across all
+  tabpages. It stays suspended until setup() is called again with the complete
+  multiline configuration, e.g. `bufferline.setup(multiline_config)` above.
+- If the UI is too small, multiline falls back globally to the native single
+  row. This is temporary: a sufficient resize resumes multiline automatically.
+- |:close|, |:hide|, or an API close of the last editing window can report |E855|
+  and suspend multiline. In the last tabpage the editing window remains; with
+  other tabs open, Neovim may finish closing that tab despite the error. Use
+  |:q| for ordinary quitting. Native unsaved-change checks remain; with 'hidden'
+  enabled, modified buffers can remain hidden as usual.
+- Disable multiline before |:mksession|, using the complete single-row setup
+  above. Default 'sessionoptions' includes `blank`, so a session may save the
+  anonymous `nofile` header window. Transparent session save/restore is not
+  supported.
+
 ==============================================================================
 HOVER EVENTS                                           *bufferline-hover-events*
 

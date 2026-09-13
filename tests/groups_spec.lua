@@ -229,6 +229,31 @@ describe("Group tests - ", function()
     assert.is_falsy(group)
   end)
 
+  it("recomputes unique group priorities after setup changes", function()
+    bufferline.setup()
+    bufferline.setup({ options = { groups = { items = { { name = "Later", matcher = function() return true end } } } } })
+    local all = groups.get_all()
+    assert.is_not.equal(all.ungrouped.priority, all.Later.priority)
+    assert.is_not.equal(all.pinned.priority, all.Later.priority)
+    groups.toggle_hidden(all.Later.priority)
+    assert.is_true(all.Later.hidden)
+    assert.is_falsy(all.ungrouped.hidden)
+  end)
+
+  it("forgets stale pinned IDs before session restoration", function()
+    vim.g.BufferlinePinnedBuffers = ""
+    bufferline.setup()
+    local buf = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(buf, "expired-pin.txt")
+    vim.api.nvim_set_current_buf(buf)
+    nvim_bufferline()
+    groups.toggle_pin()
+    vim.api.nvim_buf_delete(buf, { force = true })
+    bufferline.setup()
+    assert.has_no.errors(function() vim.api.nvim_exec_autocmds("SessionLoadPost", {}) end)
+    assert.same("", vim.g.BufferlinePinnedBuffers)
+  end)
+
   it("pinning should override other groups", function()
     bufferline.setup({
       options = {

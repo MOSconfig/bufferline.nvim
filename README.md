@@ -15,6 +15,7 @@
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Features](#features)
+  - [Multiline buffer tabs](#multiline-buffer-tabs)
   - [Alternate styling](#alternate-styling)
   - [Hover events](#hover-events)
   - [Underline indicator](#underline-indicator)
@@ -32,6 +33,7 @@
 - [How do I see only buffers per tab?](#how-do-i-see-only-buffers-per-tab)
 - [Caveats](#caveats)
 - [FAQ](#faq)
+- [Tests](#tests)
 <!--toc:end-->
 
 This plugin shamelessly attempts to emulate the aesthetics of GUI text editors/Doom Emacs.
@@ -94,6 +96,8 @@ You can close buffers by clicking the close icon or by _right clicking_ the tab 
 
 ## Configuration
 
+Contributors and AI coding agents: read [AGENTS.md](AGENTS.md) for architecture, offline tests, compatibility boundaries, and safe development workflows. [CLAUDE.md](CLAUDE.md) imports that shared guide for Claude Code.
+
 for more details on how to configure this plugin in details please see `:h bufferline-configuration`
 
 ## Features
@@ -103,6 +107,55 @@ for more details on how to configure this plugin in details please see `:h buffe
 - Sort buffers by `extension`, `directory` or pass in a custom compare function
 
 - Configuration via lua functions for greater customization.
+
+#### Multiline buffer tabs
+
+Multiline is opt-in and requires **Neovim 0.12+** with `mode = "buffers"`. The native single-row renderer remains the default, with its existing defaults and Neovim 0.8+ requirement unchanged.
+
+For a trial, replace your bufferline plugin declaration with the [MOSconfig fork](https://github.com/MOSconfig/bufferline.nvim/tree/feat/multiline-buffer-tabs) on branch `feat/multiline-buffer-tabs`, not an upstream tag. No release version is specified for this feature. For example, with lazy.nvim:
+
+```lua
+{ "MOSconfig/bufferline.nvim", branch = "feat/multiline-buffer-tabs", dependencies = "nvim-tree/nvim-web-devicons" }
+```
+
+Add multiline to your **complete** configuration; `setup()` is not an incremental options update. Keep the original table for restoring native settings:
+
+```lua
+local bufferline = require("bufferline")
+local original_config = {
+  options = {
+    -- Keep all your existing options here.
+  },
+  -- Keep other existing setup fields, such as highlights, here too.
+}
+local multiline_config = vim.deepcopy(original_config)
+multiline_config.options = multiline_config.options or {}
+multiline_config.options.mode = "buffers"
+multiline_config.options.multiline = { enabled = true, max_rows = 3 }
+bufferline.setup(multiline_config)
+```
+
+Later, restore single-row rendering without losing your custom settings:
+
+```lua
+local single_row = vim.deepcopy(original_config)
+single_row.options = single_row.options or {}
+single_row.options.multiline = single_row.options.multiline or {}
+single_row.options.multiline.enabled = false
+bufferline.setup(single_row)
+```
+
+When omitted, `show_tab_indicators` and the global `show_close_icon` automatically become `false` in multiline mode; explicitly setting either to `true` is rejected. Remove those overrides (or set them to `false`) in the multiline copy. Per-buffer close icons are supported. `mode = "tabs"`, `custom_areas`, and hover reveal are unsupported; remove custom areas and disable `hover.enabled` before enabling multiline.
+
+- A reserved top split holds the header, consuming its buffer rows **plus** Neovim's normal split separator/statusline space. `max_rows` (default `3`, a positive integer) caps the header's buffer rows, not that extra space. Overflow controls and the mouse wheel scroll hidden rows; changing the current buffer reveals it.
+- Unicode labels, icons, diagnostics, groups, pins, sidebar offsets, and buffer/close/group click actions work across rows. Existing user mouse mappings run first and may consume a click or wheel event before bufferline handles it.
+- Closing the header or using `:only` suspends multiline **globally**, across tabpages. To re-enable it, call `setup()` again with the complete multiline configuration. If the UI is too small, bufferline instead falls back globally to the native single row and resumes multiline automatically after a sufficient resize.
+- `:close`, `:hide`, or an API close of the last editing window can report `E855` and suspend multiline. In the last tabpage the editing window remains; with other tabs open, Neovim may finish closing that tab despite the error. Use `:q` for ordinary quitting. Native unsaved-change checks remain in effect; with `hidden` enabled, modified buffers can remain hidden as usual.
+- Disable multiline before `:mksession` using the complete single-row configuration above. Default `'sessionoptions'` includes `blank`, which can save the anonymous `nofile` header window. Transparent session save/restore is not supported.
+
+See `:help bufferline-multiline` for the configuration and lifecycle contract.
+
+---
 
 #### Alternate styling
 
@@ -342,3 +395,19 @@ for this upstream.
   of window, but not just the files that are open. There are _endless_ debates on this topic, but allowing a user to see what files they
   have open doesn't go against any clearly stated vim philosophy. It's a text editor and not a religion 🙏.
   Obviously this won't appeal to everyone, which isn't really a feasible objective anyway.
+
+## Tests
+
+From the repository root, run the full suite with the existing command (missing dependencies are downloaded into `.tests`):
+
+```sh
+nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua', sequential = true}"
+```
+
+For offline tests, set `NVIM_TEST_DEPS` to a directory containing existing `plenary.nvim` and `nvim-web-devicons` checkouts. This mode does not download missing dependencies:
+
+```sh
+NVIM_TEST_DEPS=/path/to/dependencies nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua', sequential = true}"
+```
+
+Use Neovim 0.12+ when testing multiline.

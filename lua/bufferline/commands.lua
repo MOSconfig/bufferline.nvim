@@ -36,16 +36,21 @@ end
 ---Handle a user "command" which can be a string or a function
 ---@param command string|function
 ---@param id number
-local function handle_user_command(command, id)
+local function handle_user_command(command, id, immediate)
   if not command then return end
   if type(command) == "function" then
     command(id)
   elseif type(command) == "string" then
-    -- Fix #574 without the scheduling the command the tabline does not refresh correctly
-    vim.schedule(function()
+    local function run()
       vim.cmd(fmt(command, id))
       ui.refresh()
-    end)
+    end
+    -- Native tabline callbacks need deferral; header input is already scheduled.
+    if immediate then
+      run()
+    else
+      vim.schedule(run)
+    end
   end
 end
 
@@ -88,6 +93,22 @@ local cmds = {
 local function handle_click(id, _, button)
   local options = config.options
   if id then handle_user_command(options[cmds[button]], id) end
+end
+
+function M.dispatch(hit, context)
+  if not api.nvim_win_is_valid(context.win) or not api.nvim_tabpage_is_valid(context.tab) then return false end
+  if api.nvim_win_get_tabpage(context.win) ~= context.tab then return false end
+  if hit.kind ~= "group" and not api.nvim_buf_is_valid(hit.id) then return false end
+  api.nvim_set_current_win(context.win)
+  if hit.kind == "group" then
+    handle_group_click(hit.id)
+  elseif hit.kind == "close" then
+    handle_user_command(config.options.close_command, hit.id, true)
+  elseif hit.kind == "click" then
+    handle_user_command(config.options[cmds[context.button or "l"]], hit.id, true)
+  end
+  ui.refresh()
+  return true
 end
 
 ---Execute an arbitrary user function on a visible by it's position buffer
@@ -194,9 +215,12 @@ end
 
 --- @param direction number
 function M.cycle(direction)
-  if vim.opt.showtabline == 0 then
+  local runtime = package.loaded["bufferline.multiline.runtime"]
+  if runtime and runtime.active() then runtime.flush("navigate") end
+  if vim.o.showtabline == 0 and not (runtime and runtime.active()) then
     if direction > 0 then vim.cmd("bnext") end
     if direction < 0 then vim.cmd("bprev") end
+    return
   end
   local index = M.get_current_element_index(state)
   if not index then return end

@@ -62,6 +62,17 @@ describe("Offset tests:", function()
     assert.is_truthy(data.left:match(" "))
   end)
 
+  it("should ignore an owned header above sidebar splits", function()
+    if vim.fn.has("nvim-0.12") == 0 then return end
+    local ft = open_test_panel()
+    bufferline.setup({ options = { offsets = { { filetype = ft, text = "Explorer" } } } })
+    local expected = offsets.get()
+    local header = api.nvim_open_win(api.nvim_create_buf(false, true), false, { split = "above", win = -1, height = 2 })
+    local actual = offsets.get(function(win) return win == header end)
+    assert.same(expected, actual)
+    api.nvim_win_close(header, true)
+  end)
+
   it("should include padded text if text is specified", function()
     local ft = open_test_panel()
     bufferline.setup({
