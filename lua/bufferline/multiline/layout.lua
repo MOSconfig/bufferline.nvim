@@ -156,16 +156,27 @@ function M.plan(entries, geometry, viewport)
       if item.entry.focusable and index > last then after = after + 1 end
     end
   end
-  local rows, visible = {}, {}
-  for index = first, last do
+  local rows, visible, positions, seen = {}, {}, {}, {}
+  for index, packed_row in ipairs(packed) do
+    local is_visible = index >= first and index <= last
     local row = new_row()
     offset(row, geometry.left, geometry.fill_hl)
     gutter(row, gutter_width, index == first and first > 1 and before or nil, -1, geometry)
-    for _, item in ipairs(packed[index].entries) do
+    for _, item in ipairs(packed_row.entries) do
+      local position
       for _, run in ipairs(item.runs) do
+        local action = run.action
+        if item.entry.focusable and action and action.kind == "click" and run.text ~= "" then
+          if not seen[action.id] then
+            position = { id = action.id, row = index, col = displaywidth(row.text) }
+            if is_visible then position.byte_col = #row.text end
+            positions[#positions + 1], seen[action.id] = position, true
+          end
+          if position and is_visible then position.byte_end = #row.text + #run.text end
+        end
         append(row, run.text, run.highlight, run.action)
       end
-      if item.entry.focusable then visible[#visible + 1] = item.entry.component end
+      if is_visible and item.entry.focusable then visible[#visible + 1] = item.entry.component end
     end
     append(
       row,
@@ -174,9 +185,10 @@ function M.plan(entries, geometry, viewport)
     )
     gutter(row, gutter_width, index == last and last < #packed and after or nil, 1, geometry)
     offset(row, geometry.right, geometry.fill_hl)
-    rows[#rows + 1] = row
+    if is_visible then rows[#rows + 1] = row end
   end
   return {
+    positions = positions,
     rows = rows,
     visible_components = visible,
     total_rows = #packed,

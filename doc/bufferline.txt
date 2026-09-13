@@ -229,6 +229,26 @@ row. Existing user mouse mappings run first and may consume click or wheel
 events before bufferline receives them; bufferline does not override that
 precedence. See |bufferline-mouse-actions| for configurable click commands.
 
+Keyboard navigation ~
+
+Use normal window navigation (|CTRL-W_k| from the editor below the header) to
+enter the header. Only the header scratch buffer has these Normal-mode maps:
+
+    h / l       Previous / next buffer candidate (no wrap at the ends).
+    j / k       Nearest candidate on the next / previous packed buffer row.
+                Skip group-only rows and scroll hidden rows into view.
+    <CR>        Run the candidate's configured left-click action in the captured
+                ordinary editor window, falling back to another valid editor.
+    <Esc>       Return to that editor without selecting a buffer.
+
+The candidate uses an IncSearch highlight distinct from the active buffer.
+Navigation does not change the editor buffer until <CR>. Groups, close icons,
+and overflow controls are not keyboard candidates. Candidate buffer IDs survive
+resize/repacking; removed or hidden candidates reconcile to the active buffer
+(or first available candidate). Wheel scrolling works with either editor or
+header focus and does not select a buffer. No global mappings are installed.
+The header stays a top-level split even when a full-height sidebar opens later.
+
 Restoring single-row mode ~
 
 Use a copy of the original complete configuration, not just a table containing
@@ -246,6 +266,10 @@ Lifecycle and limitations ~
 - Closing the header or using |:only| suspends multiline globally across all
   tabpages. It stays suspended until setup() is called again with the complete
   multiline configuration, e.g. `bufferline.setup(multiline_config)` above.
+- Disabling, fallback, session loading, or auto-hide while the header is focused
+  returns to the remembered eligible editor (or another available editor).
+  |:q| in the header tears down the header and returns to the editor; use |:q|
+  there to quit normally. Unsaved editor buffers are never deleted by teardown.
 - If the UI is too small, multiline falls back globally to the native single
   row. This is temporary: a sufficient resize resumes multiline automatically.
 - |:close|, |:hide|, or an API close of the last editing window can report |E855|

@@ -13,6 +13,30 @@ local function geometry(width, max_rows)
 end
 
 describe("Multiline layout", function()
+  it("exposes deduplicated packed buffer positions with visible Unicode byte offsets", function()
+    local first = entry(1, "界")
+    first.runs[2] = { text = "é", highlight = "Tab", action = { kind = "click", id = 1 } }
+    first.runs[3] = { text = "x", highlight = "Close", action = { kind = "close", id = 1 } }
+    local group = entry(99, "group---")
+    group.focusable = false
+    group.runs[1].action = { kind = "group", id = 99 }
+    local entries = { first, entry(2, "bb"), group, entry(3, "33333333"), entry(4, "44444444") }
+    local geo = geometry(17, 1)
+    geo.left = { text = "界", width = 3 }
+    local plan = require("bufferline.multiline.layout").plan
+    local frame = plan(entries, geo, { first_row = 1 })
+    assert.same({
+      { id = 1, row = 1, col = 6, byte_col = 7, byte_end = 13 },
+      { id = 2, row = 1, col = 10, byte_col = 14, byte_end = 16 },
+      { id = 3, row = 3, col = 6 },
+      { id = 4, row = 4, col = 6 },
+    }, frame.positions)
+    local scrolled = plan(entries, geo, { first_row = 3 })
+    assert.same({ id = 1, row = 1, col = 6 }, scrolled.positions[1])
+    assert.same({ id = 3, row = 3, col = 6, byte_col = 7, byte_end = 15 }, scrolled.positions[3])
+    assert.same({}, plan({}, geo).positions)
+  end)
+
   it("keeps exact-fit entries on one row without overflow controls", function()
     local entries = { entry(1, "aa"), entry(2, "bbb") }
     local frame = require("bufferline.multiline.layout").plan(entries, geometry(5, 1), {})

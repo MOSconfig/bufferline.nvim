@@ -67,6 +67,77 @@ local function queue_hit(hit, context, handle)
   end)
 end
 
+local function candidates(handle)
+  local result = {}
+  for _, position in ipairs(handle.frame and handle.frame.positions or {}) do
+    if api.nvim_buf_is_valid(position.id) and vim.bo[position.id].buflisted then result[#result + 1] = position end
+  end
+  return result
+end
+
+local function reconcile(handle, current)
+  local positions = candidates(handle)
+  for _, position in ipairs(positions) do
+    if position.id == handle.candidate then return position end
+  end
+  local selected = positions[1]
+  for _, position in ipairs(positions) do
+    if position.id == current then selected = position end
+  end
+  handle.candidate = selected and selected.id or nil
+  return selected
+end
+
+local function return_to_editor(tab, handle)
+  local editor = ordinary(handle.editor, tab) and handle.editor or editor_for(tab, handle)
+  if editor then api.nvim_set_current_win(editor) end
+  return editor
+end
+
+local function navigate(handle, key)
+  local tab = api.nvim_get_current_tabpage()
+  if not M.active() or handles[tab] ~= handle or not M.owns(api.nvim_get_current_win()) then return end
+  M.flush("navigate")
+  if not M.active() or handles[tab] ~= handle then return end
+  if key == "<Esc>" or key == "<CR>" then
+    local editor = return_to_editor(tab, handle)
+    if key == "<CR>" and editor and handle.candidate then
+      queue_hit(
+        { kind = "click", id = handle.candidate },
+        { win = editor, tab = tab, button = "l", clicks = 1 },
+        handle
+      )
+    end
+    M.request("selection")
+    return
+  end
+  local positions = candidates(handle)
+  local selected, index
+  for i, position in ipairs(positions) do
+    if position.id == handle.candidate then
+      selected, index = position, i
+    end
+  end
+  if not selected then return end
+  local target
+  if key == "h" or key == "l" then
+    target = positions[index + (key == "h" and -1 or 1)]
+  else
+    local direction = key == "k" and -1 or 1
+    for i = index + direction, direction == 1 and #positions or 1, direction do
+      local position = positions[i]
+      if (position.row - selected.row) * direction > 0 then
+        if target and target.row ~= position.row then break end
+        if not target or math.abs(position.col - selected.col) < math.abs(target.col - selected.col) then
+          target = position
+        end
+      end
+    end
+  end
+  if target then handle.candidate = target.id end
+  M.flush("navigate")
+end
+
 local function on_key(key)
   local action = mouse_keys[key]
   if not action or not M.active() then return end
@@ -105,7 +176,8 @@ end
 local function leave(next_mode)
   generation, pending, mode = generation + 1, nil, next_mode
   guard = true
-  for _, handle in pairs(handles) do
+  for tab, handle in pairs(handles) do
+    if M.owns(handle.win) and api.nvim_get_current_win() == handle.win then return_to_editor(tab, handle) end
     if M.owns(handle.win) then pcall(api.nvim_win_close, handle.win, true) end
     if handle.buf and api.nvim_buf_is_valid(handle.buf) and vim.b[handle.buf][marker] == namespace then
       pcall(api.nvim_buf_delete, handle.buf, { force = true })
@@ -178,7 +250,7 @@ function M.enable(config, callbacks)
       local win = tonumber(event.match)
       if not api.nvim_win_is_valid(win) or api.nvim_win_get_config(win).relative ~= "" then return end
       for tab, handle in pairs(handles) do
-        if handle.win == win then
+        if handle.win == win and M.owns(win) then
           handle.closing = true
           local gen = generation
           vim.schedule(function()
@@ -199,6 +271,7 @@ function M.enable(config, callbacks)
       for _, candidate in ipairs(api.nvim_tabpage_list_wins(tab)) do
         if not M.owns(candidate) and api.nvim_win_get_config(candidate).relative == "" then count = count + 1 end
       end
+      -- WinClosed runs before removal, so a real split still exists during header teardown.
       if count == 1 and api.nvim_win_get_tabpage(win) == tab then leave("suspended") end
     end,
   })
@@ -219,11 +292,8 @@ function M.enable(config, callbacks)
       if handle and ordinary(api.nvim_get_current_win(), tab) then handle.editor = api.nvim_get_current_win() end
       if handle and M.owns(api.nvim_get_current_win()) then
         local editor = editor_for(tab, handle)
-        if editor then
-          guard = true
-          api.nvim_set_current_win(editor)
-          guard = false
-        end
+        handle.candidate = editor and api.nvim_win_get_buf(editor) or nil
+        reconcile(handle, handle.candidate)
       end
       M.request("WinEnter")
     end,
@@ -234,6 +304,14 @@ end
 local function allocate(handle, height)
   handle.buf = api.nvim_create_buf(false, true)
   vim.b[handle.buf][marker] = namespace
+  for _, key in ipairs({ "h", "j", "k", "l", "<CR>", "<Esc>" }) do
+    vim.keymap.set(
+      "n",
+      key,
+      function() navigate(handle, key) end,
+      { buffer = handle.buf, silent = true, nowait = true }
+    )
+  end
   for name, value in pairs({ buftype = "nofile", bufhidden = "wipe", swapfile = false, buflisted = false }) do
     vim.bo[handle.buf][name] = value
   end
@@ -296,6 +374,12 @@ local function render(reason)
   end
   handle.editor = editor_for(tab, handle)
   if not handle.editor then return end
+  if
+    handle.win
+    and (api.nvim_win_get_width(handle.win) ~= vim.o.columns or api.nvim_win_get_position(handle.win)[1] ~= 0)
+  then
+    api.nvim_win_set_config(handle.win, { split = "above", win = -1 })
+  end
   local current = api.nvim_win_get_buf(handle.editor)
   local budget = vim.o.lines
     - vim.o.cmdheight
@@ -306,16 +390,31 @@ local function render(reason)
     leave("fallback")
     return
   end
-  local frame = api.nvim_win_call(
-    handle.editor,
-    function()
-      return hooks.frame(vim.o.columns, math.min(options.multiline.max_rows, budget), {
-        first_row = handle.first_row,
-        current_id = current,
-        reveal = current ~= handle.last_current or reason == "WinResized" or reason == "VimResized",
-      })
+  local focused = M.owns(api.nvim_get_current_win())
+  local function build_frame()
+    return api.nvim_win_call(
+      handle.editor,
+      function()
+        return hooks.frame(vim.o.columns, math.min(options.multiline.max_rows, budget), {
+          first_row = handle.first_row,
+          current_id = focused and handle.candidate or current,
+          reveal = focused
+              and (reason == "navigate" or reason == "WinEnter" or reason == "WinResized" or reason == "VimResized")
+            or not focused and (current ~= handle.last_current or reason == "WinResized" or reason == "VimResized"),
+        })
+      end
+    )
+  end
+  local frame = build_frame()
+  if focused and frame and frame.valid ~= false then
+    handle.frame = frame
+    local previous = handle.candidate
+    reconcile(handle, current)
+    if previous ~= handle.candidate then
+      reason = "navigate"
+      frame = build_frame()
     end
-  )
+  end
   if not frame or frame.valid == false or #frame.rows == 0 or #frame.rows > budget then
     leave("fallback")
     return
@@ -353,6 +452,15 @@ local function render(reason)
   end
   vim.bo[handle.buf].modifiable = false
   handle.frame, handle.first_row, handle.last_current = frame, frame.first_row, current
+  local selected = reconcile(handle, current)
+  if focused and selected and selected.byte_col then
+    api.nvim_win_set_cursor(handle.win, { selected.row - frame.first_row + 1, selected.byte_col })
+    api.nvim_buf_set_extmark(handle.buf, namespace, selected.row - frame.first_row, selected.byte_col, {
+      end_col = selected.byte_end,
+      hl_group = "IncSearch",
+      priority = 200,
+    })
+  end
 end
 
 function M.flush(reason)

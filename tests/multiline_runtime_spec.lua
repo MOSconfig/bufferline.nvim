@@ -46,6 +46,52 @@ describe("Multiline runtime", function()
     )
   end
 
+  local function input(keys)
+    vim.fn.rpcrequest(child, "nvim_input", keys)
+    child_lua("return true")
+    vim.wait(30)
+  end
+
+  local function real_layout(count)
+    local initial = start_child()
+    child_lua(
+      [=[
+      local count = ...
+      ids, entries = {}, {}
+      for i = 1, count do
+        local id = i == 1 and vim.api.nvim_win_get_buf(editor) or vim.api.nvim_create_buf(true, false)
+        ids[i] = id
+        entries[#entries + 1] = { id = id, focusable = true, component = { id = id }, runs = {
+          { text = i == 1 and "界é01 " or string.format("b%02d---", i), highlight = "Normal", action = { kind = "click", id = id } },
+        } }
+        if i == 2 then entries[#entries + 1] = { focusable = false, runs = {
+          { text = "group---------", highlight = "Normal", action = { kind = "group", id = "group" } },
+        } } end
+      end
+      layout_width = 22
+      hooks.frame = function(_, max_rows, viewport)
+        local live = vim.tbl_filter(function(e) return not e.id or (vim.api.nvim_buf_is_valid(e.id) and vim.bo[e.id].buflisted) end, entries)
+        return require("bufferline.multiline.layout").plan(live,
+          { width = layout_width, max_rows = max_rows, fill_hl = "Normal", marker_hl = "Normal" }, viewport)
+      end
+      hooks.dispatch = function(hit, context)
+        seen[#seen + 1] = { hit = hit, context = context, win = vim.api.nvim_get_current_win() }
+        vim.api.nvim_win_set_buf(context.win, hit.id)
+      end
+      runtime.flush("test")
+      vim.cmd("redraw")
+      function snapshot()
+        local h = runtime.handles()[tab]
+        return { first = h.first_row, ids = vim.tbl_map(function(c) return c.id end, h.frame.visible_components),
+          lines = vim.api.nvim_buf_get_lines(h.buf, 0, -1, false), candidate = h.candidate,
+          editor_buf = vim.api.nvim_win_get_buf(editor), win = vim.api.nvim_get_current_win() }
+      end
+    ]=],
+      { count }
+    )
+    return initial
+  end
+
   before_each(function()
     package.loaded["bufferline.multiline.runtime"] = nil
     runtime = require("bufferline.multiline.runtime")
@@ -139,7 +185,7 @@ describe("Multiline runtime", function()
     assert.equals(height, api.nvim_win_get_height(win))
   end)
 
-  it("uses the last ordinary editing window while a sidebar is focused and rejects header focus", function()
+  it("uses the last ordinary editing window while a sidebar or header is focused", function()
     runtime.enable(options, hooks)
     runtime.flush("test")
     vim.cmd("vnew")
@@ -153,7 +199,7 @@ describe("Multiline runtime", function()
     assert.equals(second, calls[#calls].win)
     assert.equals(sidebar, api.nvim_get_current_win())
     api.nvim_set_current_win(handle.win)
-    assert.equals(second, api.nvim_get_current_win())
+    assert.equals(handle.win, api.nvim_get_current_win())
     assert.equals(second, handle.editor)
   end)
 
@@ -247,6 +293,281 @@ describe("Multiline runtime", function()
     assert.equals(1, child_lua("return runtime.handles()[tab].first_row"))
     child_lua("runtime.flush('VimResized')")
     assert.is_true(child_lua("return viewports[#viewports].reveal"))
+  end)
+
+  it("scrolls real packed text and IDs with wheel input in either focus context", function()
+    local initial = real_layout(20)
+    for _, focused in ipairs({ false, true }) do
+      child_lua("runtime.handles()[tab].first_row = 1; runtime.flush('scroll'); vim.cmd('redraw')")
+      if focused then input("<C-w>k") end
+      local top = child_lua("return snapshot()")
+      assert.equals(focused and initial.handle.win or initial.editor, top.win)
+      for _, direction in ipairs({ "down", "down", "up" }) do
+        local previous = child_lua("return snapshot()")
+        vim.fn.rpcrequest(child, "nvim_input_mouse", "wheel", direction, "", 0, 0, 5)
+        assert.is_true(vim.wait(500, function() return child_lua("return snapshot().first") ~= previous.first end))
+        local after = child_lua("return snapshot()")
+        assert.is_false(vim.deep_equal(previous.ids, after.ids))
+        assert.is_false(vim.deep_equal(previous.lines, after.lines))
+        assert.equals(top.win, after.win)
+        assert.equals(top.editor_buf, after.editor_buf)
+        child_lua("runtime.flush('ui.refresh')")
+        assert.same(after.ids, child_lua("return snapshot().ids"))
+        assert.same(after.lines, child_lua("return snapshot().lines"))
+      end
+      for _ = 1, 20 do
+        vim.fn.rpcrequest(child, "nvim_input_mouse", "wheel", "down", "", 0, 0, 5)
+        child_lua("return true")
+      end
+      assert.equals(
+        child_lua("local h = runtime.handles()[tab]; return h.frame.total_rows - #h.frame.rows + 1"),
+        child_lua("return snapshot().first")
+      )
+      local bottom = child_lua("return snapshot()")
+      vim.fn.rpcrequest(child, "nvim_input_mouse", "wheel", "down", "", 0, 0, 5)
+      child_lua("return true")
+      assert.same(bottom, child_lua("return snapshot()"))
+      for _ = 1, 20 do
+        vim.fn.rpcrequest(child, "nvim_input_mouse", "wheel", "up", "", 0, 0, 5)
+        child_lua("return true")
+      end
+      assert.equals(1, child_lua("return snapshot().first"))
+      assert.same(top.ids, child_lua("return snapshot().ids"))
+      assert.same(top.lines, child_lua("return snapshot().lines"))
+    end
+  end)
+
+  it("navigates candidates using actual local input and dispatches only on Enter", function()
+    local initial = real_layout(20)
+    local ids = child_lua("return ids")
+    input("<C-w>k")
+    assert.equals(initial.handle.win, child_lua("return snapshot().win"))
+    assert.equals(ids[1], child_lua("return snapshot().candidate"))
+    input("hk")
+    assert.equals(ids[1], child_lua("return snapshot().candidate"))
+    input("l")
+    assert.equals(ids[2], child_lua("return snapshot().candidate"))
+    input("j")
+    assert.equals(ids[4], child_lua("return snapshot().candidate"))
+    input("k")
+    assert.equals(ids[2], child_lua("return snapshot().candidate"))
+    input(string.rep("j", 20) .. string.rep("l", 20))
+    assert.equals(ids[20], child_lua("return snapshot().candidate"))
+    assert.is_true(child_lua("return snapshot().first > 3"))
+    assert.equals(ids[1], child_lua("return snapshot().editor_buf"))
+    assert.equals(0, child_lua("return #seen"))
+    input("<Esc>")
+    assert.equals(initial.editor, child_lua("return snapshot().win"))
+    assert.equals(ids[1], child_lua("return snapshot().editor_buf"))
+    input("<C-w>kl<CR>")
+    local seen = child_lua("return seen")
+    assert.equals(1, #seen)
+    assert.equals(ids[2], seen[1].hit.id)
+    assert.equals(initial.editor, seen[1].win)
+    assert.same({ win = initial.editor, tab = initial.tab, button = "l", clicks = 1 }, seen[1].context)
+    assert.equals(ids[2], child_lua("return snapshot().editor_buf"))
+    assert.same(
+      {},
+      child_lua(
+        "return vim.tbl_filter(function(m) return m.lhs == 'h' or m.lhs == 'j' or m.lhs == 'k' or m.lhs == 'l' end, vim.api.nvim_get_keymap('n'))"
+      )
+    )
+  end)
+
+  it("navigates with the real plugin frame and configured click callback", function()
+    local initial = real_layout(20)
+    child_lua(
+      [=[
+      local deps = ...
+      vim.opt.runtimepath:append(deps .. "/nvim-web-devicons")
+      for i, id in ipairs(ids) do vim.api.nvim_buf_set_name(id, "keyboard-buffer-" .. i .. ".lua") end
+      require("bufferline").setup({ options = {
+        multiline = { enabled = true, max_rows = 3 }, show_buffer_icons = false,
+        left_mouse_command = function(id)
+          seen[#seen + 1] = { id = id, win = vim.api.nvim_get_current_win() }
+          vim.api.nvim_set_current_buf(id)
+        end,
+      } })
+      runtime.flush("test")
+      vim.cmd("redraw")
+    ]=],
+      { os.getenv("NVIM_TEST_DEPS") or (root .. "/.tests") }
+    )
+    local header_win = child_lua("return runtime.handles()[tab].win")
+    input("<C-w>kljjjj")
+    assert.equals(header_win, child_lua("return snapshot().win"))
+    assert.is_true(child_lua("return snapshot().first > 1"))
+    assert.equals(child_lua("return ids[1]"), child_lua("return snapshot().editor_buf"))
+    local candidate = child_lua("return snapshot().candidate")
+    input("<CR>")
+    assert.same({ { id = candidate, win = initial.editor } }, child_lua("return seen"))
+  end)
+
+  it("handles empty and single candidates and Unicode cursor/highlight bytes", function()
+    for _, count in ipairs({ 0, 1 }) do
+      local initial = real_layout(count)
+      input("<C-w>khjkl")
+      local selected = child_lua("return snapshot().candidate or false")
+      assert.equals(count == 1 and child_lua("return ids[1]") or false, selected)
+      if count == 1 then
+        assert.same({ 1, 0 }, child_lua("return vim.api.nvim_win_get_cursor(runtime.handles()[tab].win)"))
+        assert.is_true(child_lua([=[
+          local h = runtime.handles()[tab]
+          for _, m in ipairs(vim.api.nvim_buf_get_extmarks(h.buf, -1, 0, -1, { details = true })) do
+            if m[4].hl_group == "IncSearch" then return m[3] == 0 and m[4].end_col == #"界é01 " end
+          end
+          return false
+        ]=]))
+      end
+      input("<CR>")
+      assert.equals(initial.editor, child_lua("return snapshot().win"))
+      assert.equals(count, child_lua("return #seen"))
+      vim.fn.jobstop(child)
+      child = nil
+    end
+  end)
+
+  it("preserves candidate IDs across repacking and reconciles removed buffers", function()
+    real_layout(20)
+    input("<C-w>klllll")
+    local selected = child_lua("return snapshot().candidate")
+    child_lua("layout_width = 14; runtime.flush('VimResized')")
+    assert.equals(selected, child_lua("return snapshot().candidate"))
+    assert.is_true(child_lua("return vim.tbl_contains(snapshot().ids, snapshot().candidate)"))
+    child_lua("vim.api.nvim_buf_delete(runtime.handles()[tab].candidate, { force = true })")
+    assert.is_true(vim.wait(500, function() return child_lua("return snapshot().candidate") ~= selected end))
+    assert.equals(child_lua("return ids[1]"), child_lua("return snapshot().candidate"))
+    assert.is_true(child_lua("return vim.tbl_contains(snapshot().ids, snapshot().candidate)"))
+    input("<CR>")
+    assert.equals(child_lua("return ids[1]"), child_lua("return seen[1].hit.id"))
+  end)
+
+  it("restores the captured editor before focused teardown and falls back when it disappears", function()
+    for _, action in ipairs({ "disable", "fallback", "session", "auto-hide" }) do
+      local initial = real_layout(2)
+      child_lua([=[
+        vim.cmd("vnew")
+        other = vim.api.nvim_get_current_win()
+        vim.api.nvim_set_current_win(editor)
+      ]=])
+      input("<C-w>k")
+      child_lua(
+        [=[
+        local action = ...
+        if action == "disable" then runtime.disable()
+        elseif action == "fallback" then hooks.frame = function() return { valid = false } end; runtime.flush("test")
+        elseif action == "session" then vim.api.nvim_exec_autocmds("SessionLoadPre", {})
+        else
+          options.always_show_bufferline = false
+          for _, b in ipairs(vim.api.nvim_list_bufs()) do
+            if b ~= ids[1] then vim.bo[b].buflisted = false end
+          end
+          runtime.flush("test")
+        end
+      ]=],
+        { action }
+      )
+      assert.equals(initial.editor, child_lua("return vim.api.nvim_get_current_win()"), action)
+      assert.is_false(child_lua("return vim.api.nvim_win_is_valid(" .. initial.handle.win .. ")"))
+      vim.fn.jobstop(child)
+      child = nil
+    end
+    for _, key in ipairs({ "<Esc>", "<CR>" }) do
+      real_layout(3)
+      child_lua("vim.cmd('vnew'); other = vim.api.nvim_get_current_win(); vim.api.nvim_set_current_win(editor)")
+      input("<C-w>kl")
+      child_lua("vim.api.nvim_win_close(editor, true)")
+      input(key)
+      assert.equals(child_lua("return other"), child_lua("return vim.api.nvim_get_current_win()"))
+      if key == "<CR>" then assert.equals(child_lua("return other"), child_lua("return seen[1].context.win")) end
+      vim.fn.jobstop(child)
+      child = nil
+    end
+  end)
+
+  it("does not strand an owned header after focused only or buffer deletion", function()
+    for _, command in ipairs({ "only", "only!", "bdelete", "bdelete!" }) do
+      for _, dirty in ipairs({ false, true }) do
+        local initial = real_layout(3)
+        child_lua(
+          "vim.o.hidden = false; if ... then vim.api.nvim_buf_set_lines(ids[1], 0, -1, false, {'dirty'}) end",
+          { dirty }
+        )
+        input("<C-w>k")
+        local result =
+          child_lua("local ok, err = pcall(vim.cmd, ...); return { ok = ok, err = tostring(err) }", { command })
+        vim.wait(30)
+        assert.is_true(
+          child_lua(
+            "for _, w in ipairs(vim.api.nvim_list_wins()) do if not runtime.owns(w) and vim.bo[vim.api.nvim_win_get_buf(w)].buftype == '' then return true end end; return false"
+          ),
+          command .. result.err
+        )
+        assert.is_true(child_lua("return vim.api.nvim_buf_is_valid(ids[1])"))
+        if result.ok then assert.is_false(child_lua("return runtime.owns(vim.api.nvim_get_current_win())")) end
+        if dirty then assert.same({ "dirty" }, child_lua("return vim.api.nvim_buf_get_lines(ids[1], 0, -1, false)")) end
+        vim.fn.jobstop(child)
+        child = nil
+      end
+    end
+  end)
+
+  it("disposes an owned header before its scratch buffer is deleted or wiped", function()
+    for _, command in ipairs({ "bdelete", "bwipeout" }) do
+      local initial = real_layout(3)
+      input("<C-w>k")
+      child_lua("vim.cmd(...)", { command })
+      vim.wait(30)
+      assert.is_false(child_lua("return runtime.active()"))
+      assert.is_false(child_lua("return vim.api.nvim_win_is_valid(" .. initial.handle.win .. ")"))
+      assert.equals(initial.editor, child_lua("return vim.api.nvim_get_current_win()"))
+      assert.equals(1, child_lua("return #vim.api.nvim_list_wins()"))
+      vim.fn.jobstop(child)
+      child = nil
+    end
+  end)
+
+  it("returns from focused quit without stranding the header or bypassing modified checks", function()
+    for _, dirty in ipairs({ false, true }) do
+      local initial = real_layout(1)
+      child_lua("if ... then vim.api.nvim_buf_set_lines(ids[1], 0, -1, false, {'dirty'}) end", { dirty })
+      input("<C-w>k")
+      local result = child_lua(
+        "local ok, err = pcall(vim.cmd, 'quit'); return { ok = ok, err = tostring(err), win = vim.api.nvim_get_current_win(), lines = vim.api.nvim_buf_get_lines(ids[1], 0, -1, false) }"
+      )
+      assert.is_true(result.ok, result.err)
+      assert.equals(initial.editor, result.win)
+      assert.is_false(child_lua("return runtime.active()"))
+      assert.equals(1, child_lua("return #vim.api.nvim_list_wins()"))
+      if dirty then
+        assert.same({ "dirty" }, result.lines)
+        local quit = child_lua("local ok, err = pcall(vim.cmd, 'quit'); return { ok = ok, err = tostring(err) }")
+        assert.is_false(quit.ok)
+        assert.matches("E37", quit.err)
+        vim.fn.jobstop(child)
+      else
+        vim.fn.rpcnotify(child, "nvim_command", "quit")
+        assert.equals(0, vim.fn.jobwait({ child }, 1000)[1])
+      end
+      child = nil
+    end
+  end)
+
+  it("restores top-level header geometry after a full-height sidebar opens", function()
+    runtime.enable(options, hooks)
+    runtime.flush("test")
+    local handle = runtime.handles()[api.nvim_get_current_tabpage()]
+    vim.cmd("topleft vnew")
+    local sidebar = api.nvim_get_current_win()
+    vim.bo.buftype = "nofile"
+    local sidebar_buf = api.nvim_win_get_buf(sidebar)
+    runtime.flush("WinResized")
+    assert.equals(vim.o.columns, api.nvim_win_get_width(handle.win))
+    assert.same({ 0, 0 }, api.nvim_win_get_position(handle.win))
+    assert.equals(sidebar_buf, api.nvim_win_get_buf(sidebar))
+    assert.equals(sidebar, api.nvim_get_current_win())
+    assert.equals(editor, handle.editor)
+    assert.equals(vim.o.columns, calls[#calls].width)
   end)
 
   it("falls back globally on an invalid frame and retries only after a resize", function()
@@ -488,6 +809,20 @@ describe("Multiline runtime", function()
     assert.same({ "do not remove" }, api.nvim_buf_get_lines(foreign, 0, -1, false))
     runtime.disable()
     assert.is_true(api.nvim_win_is_valid(handle.win))
+    assert.is_true(api.nvim_buf_is_valid(foreign))
+  end)
+
+  it("does not treat closure of a replaced header as closure of owned resources", function()
+    runtime.enable(options, hooks)
+    runtime.flush("test")
+    local handle = runtime.handles()[api.nvim_get_current_tabpage()]
+    vim.bo[handle.buf].bufhidden = "hide"
+    local foreign = api.nvim_create_buf(true, false)
+    vim.wo[handle.win].winfixbuf = false
+    api.nvim_win_set_buf(handle.win, foreign)
+    api.nvim_win_close(handle.win, true)
+    assert.is_nil(handle.closing)
+    runtime.flush("test")
     assert.is_true(api.nvim_buf_is_valid(foreign))
   end)
 
