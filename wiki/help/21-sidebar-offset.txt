@@ -1,0 +1,50 @@
+==============================================================================
+SIDEBAR OFFSET                                           *bufferline-offset*
+
+You can prevent the bufferline drawing above a *vertical* sidebar split such as a file explorer.
+To do this you must set the `offsets` configuration option to a list of tables
+containing the details of the window to avoid. *NOTE:* this is only relevant
+for left or right aligned sidebar windows such as `NvimTree`, `NERDTree` or
+`Vista`
+>lua
+    offsets = {
+        {
+            filetype = "NvimTree",
+            text = "File Explorer",
+            highlight = "Directory",
+            separator = true -- use a "true" to enable the default, or set your own character
+        }
+    }
+<
+The `filetype` is used to check whether a particular window is a match, the
+`text` is *optional* and will show above the window if specified.
+`text` can be either a string or a function which should also return a string.
+See the example below.
+>lua
+  offsets = {
+    {
+      filetype = "NvimTree",
+      text = function()
+        return vim.fn.getcwd()
+      end,
+      highlight = "Directory",
+      text_align = "left"
+    }
+  }
+
+
+If it is too long it will be truncated. The highlight controls what highlight
+is shown above the window.
+
+You can also change the alignment of the text in the offset section using
+`text_align` which can be set to `left`, `right` or `center`.
+
+An offset can also have a separator which mimics the appearance of the
+win separator, and the intent is give a vertical split the appearance of
+a consistent separator. The highlight can be changed using the `offset_separator`
+highlight. The value can be set to a `boolean` (uses the default separator if
+true) or to a string which will be the character that will be used.
+
+Lastly you can specify a `padding` option as well which will increase the
+amount the bufferline is offset beyond just the window width, this isn't
+something that is generally required though.

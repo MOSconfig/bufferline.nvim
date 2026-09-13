@@ -86,6 +86,18 @@ describe("Multiline runtime", function()
           lines = vim.api.nvim_buf_get_lines(h.buf, 0, -1, false), candidate = h.candidate,
           editor_buf = vim.api.nvim_win_get_buf(editor), win = vim.api.nvim_get_current_win() }
       end
+      -- Real editing windows in the current tab, excluding owned headers and floats.
+      function editors()
+        local n = 0
+        for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+          if not runtime.owns(w) and vim.api.nvim_win_get_config(w).relative == "" then n = n + 1 end
+        end
+        return n
+      end
+      function header_win()
+        local h = runtime.handles()[vim.api.nvim_get_current_tabpage()]
+        return h and h.win or -1
+      end
     ]=],
       { count }
     )
@@ -337,6 +349,106 @@ describe("Multiline runtime", function()
     end
   end)
 
+  it("closes the candidate with x without activation and keeps header focus", function()
+    local initial = real_layout(3)
+    child_lua([=[
+      hooks.dispatch = function(hit, context)
+        seen[#seen + 1] = { kind = hit.kind, id = hit.id, current = vim.api.nvim_win_get_buf(context.win) }
+        vim.api.nvim_set_current_win(context.win)
+        if not refuse then vim.api.nvim_buf_delete(hit.id, { force = false }) end
+      end
+    ]=])
+    input("<C-w>k")
+    input("l")
+    local ids = child_lua("return ids")
+    child_lua("refuse = true")
+    input("x")
+    assert.equals(ids[2], child_lua("return snapshot().candidate"))
+    assert.equals(initial.handle.win, child_lua("return snapshot().win"))
+    child_lua("refuse = false")
+    input("x")
+    assert.same({ kind = "close", id = ids[2], current = ids[1] }, child_lua("return seen[2]"))
+    assert.equals(ids[3], child_lua("return snapshot().candidate"))
+    assert.equals(initial.handle.win, child_lua("return snapshot().win"))
+    assert.equals(ids[1], child_lua("return snapshot().editor_buf"))
+    input("x")
+    assert.equals(ids[1], child_lua("return snapshot().candidate"))
+    input("<Esc>")
+    assert.equals(initial.editor, child_lua("return snapshot().win"))
+  end)
+
+  it("invalidates a queued keyboard close when disabled before dispatch", function()
+    real_layout(3)
+    input("<C-w>k")
+    child_lua([=[
+      local h = runtime.handles()[tab]
+      local close
+      for _, map in ipairs(vim.api.nvim_buf_get_keymap(h.buf, "n")) do
+        if map.lhs == "x" then close = map.callback end
+      end
+      assert(close)()
+      runtime.disable()
+    ]=])
+    vim.wait(30)
+    assert.same({}, child_lua("return seen"))
+    assert.is_true(child_lua("return vim.bo[ids[1]].buflisted"))
+  end)
+
+  it("restores focus after a close callback error without losing the candidate", function()
+    local initial = real_layout(3)
+    child_lua([=[
+      hooks.dispatch = function(_, context)
+        vim.api.nvim_set_current_win(context.win)
+        error("close rejected")
+      end
+      vim.notify = function(message) warning = message end
+    ]=])
+    input("<C-w>klx")
+    assert.equals(initial.handle.win, child_lua("return snapshot().win"))
+    assert.equals(child_lua("return ids[2]"), child_lua("return snapshot().candidate"))
+    assert.is_truthy(child_lua("return warning:find('close rejected', 1, true)"))
+    input("h")
+    assert.equals(child_lua("return ids[1]"), child_lua("return snapshot().candidate"))
+  end)
+
+  it("keeps slope edges in the fill color above both selection highlights", function()
+    real_layout(3)
+    child_lua([=[
+      options.separator_style = "slope"
+      vim.api.nvim_set_hl(0, "BufferLineFill", { bg = "#112233" })
+      table.insert(entries[1].runs, 1, { text = " ", highlight = "BufferLineSeparatorSelected" })
+      runtime.flush("test")
+    ]=])
+    input("<C-w>k")
+    assert.is_true(child_lua([=[
+      local h = runtime.handles()[tab]
+      local found = false
+      for _, m in ipairs(vim.api.nvim_buf_get_extmarks(h.buf, -1, 0, -1, { details = true })) do
+        if m[4].hl_group == "BufferLineMultilineSlope" then
+          found = m[3] == 0 and m[4].end_col == #"" and m[4].priority > 200
+        end
+      end
+      local hl = vim.api.nvim_get_hl(0, { name = "BufferLineMultilineSlope", link = false })
+      return found and hl.fg == 0x112233 and hl.bg == nil
+    ]=]))
+  end)
+
+  it("paints the active entry even while the editor has focus", function()
+    real_layout(3)
+    assert.is_true(child_lua([=[
+      local h = runtime.handles()[tab]
+      local found = false
+      for _, m in ipairs(vim.api.nvim_buf_get_extmarks(h.buf, -1, 0, -1, { details = true })) do
+        if m[4].hl_group == "BufferLineBufferSelected" then
+          found = m[3] == 0 and m[4].end_col == #"界é01 " and m[4].priority == 150
+        else
+          assert(m[4].priority < 150, "Segment highlights must not override whole-tab selection")
+        end
+      end
+      return found
+    ]=]))
+  end)
+
   it("navigates candidates using actual local input and dispatches only on Enter", function()
     local initial = real_layout(20)
     local ids = child_lua("return ids")
@@ -512,44 +624,95 @@ describe("Multiline runtime", function()
     end
   end)
 
-  it("disposes an owned header before its scratch buffer is deleted or wiped", function()
+  it("disposes an owned header scratch buffer per tab and stays the selected renderer", function()
     for _, command in ipairs({ "bdelete", "bwipeout" }) do
       local initial = real_layout(3)
       input("<C-w>k")
       child_lua("vim.cmd(...)", { command })
-      vim.wait(30)
-      assert.is_false(child_lua("return runtime.active()"))
+      vim.wait(60)
+      -- The disposed header window is gone and focus is never stranded on it.
       assert.is_false(child_lua("return vim.api.nvim_win_is_valid(" .. initial.handle.win .. ")"))
-      assert.equals(initial.editor, child_lua("return vim.api.nvim_get_current_win()"))
-      assert.equals(1, child_lua("return #vim.api.nvim_list_wins()"))
+      assert.is_false(child_lua("return runtime.owns(vim.api.nvim_get_current_win())"))
+      -- Multiline remains the configured renderer and native never returns.
+      assert.is_true(child_lua("return runtime.selected()"))
+      assert.equals(0, child_lua("return vim.o.showtabline"))
+      assert.equals(1, child_lua("return editors()"))
       vim.fn.jobstop(child)
       child = nil
     end
   end)
 
-  it("returns from focused quit without stranding the header or bypassing modified checks", function()
+  it("never quits the editor from the header and recreates it once settled", function()
     for _, dirty in ipairs({ false, true }) do
       local initial = real_layout(1)
       child_lua("if ... then vim.api.nvim_buf_set_lines(ids[1], 0, -1, false, {'dirty'}) end", { dirty })
       input("<C-w>k")
+      -- :q in the header removes the header and returns to the editor; it never quits it.
       local result = child_lua(
-        "local ok, err = pcall(vim.cmd, 'quit'); return { ok = ok, err = tostring(err), win = vim.api.nvim_get_current_win(), lines = vim.api.nvim_buf_get_lines(ids[1], 0, -1, false) }"
+        "local ok, err = pcall(vim.cmd, 'quit'); return { ok = ok, err = tostring(err), lines = vim.api.nvim_buf_get_lines(ids[1], 0, -1, false) }"
       )
       assert.is_true(result.ok, result.err)
-      assert.equals(initial.editor, result.win)
-      assert.is_false(child_lua("return runtime.active()"))
-      assert.equals(1, child_lua("return #vim.api.nvim_list_wins()"))
+      vim.wait(60)
+      assert.equals(initial.editor, child_lua("return vim.api.nvim_get_current_win()"))
+      assert.is_false(child_lua("return runtime.owns(vim.api.nvim_get_current_win())"))
+      assert.is_true(child_lua("return runtime.selected()"))
+      assert.equals(0, child_lua("return vim.o.showtabline"))
+      assert.equals(1, child_lua("return editors()"))
+      -- Settled: the header is back, so removal was never a permanent suspension.
+      assert.is_true(child_lua("return runtime.active()"))
+      assert.is_true(child_lua("return runtime.owns(header_win())"))
       if dirty then
         assert.same({ "dirty" }, result.lines)
+        -- A refused dirty quit still recovers a header rather than stranding native.
         local quit = child_lua("local ok, err = pcall(vim.cmd, 'quit'); return { ok = ok, err = tostring(err) }")
         assert.is_false(quit.ok)
         assert.matches("E37", quit.err)
+        vim.wait(60)
+        assert.is_true(child_lua("return runtime.owns(header_win())"))
+        assert.equals(0, child_lua("return vim.o.showtabline"))
+        assert.same({ "dirty" }, child_lua("return vim.api.nvim_buf_get_lines(ids[1], 0, -1, false)"))
         vim.fn.jobstop(child)
       else
+        -- The final quit still exits: a nonessential header must not keep Neovim alive.
         vim.fn.rpcnotify(child, "nvim_command", "quit")
-        assert.equals(0, vim.fn.jobwait({ child }, 1000)[1])
+        assert.equals(0, vim.fn.jobwait({ child }, 2000)[1])
       end
       child = nil
+    end
+  end)
+
+  it("keeps the header when :split then :q closes only an editor split", function()
+    -- Exact reported repro: the header must survive, and native must never come back.
+    for _, command in ipairs({ "split", "vsplit" }) do
+      for _, which in ipairs({ "new", "original" }) do
+        local initial = real_layout(3)
+        child_lua("vim.cmd(...)", { command })
+        vim.wait(60)
+        local header = child_lua("return header_win()")
+        assert.is_true(child_lua("return runtime.owns(header_win())"), command)
+        assert.equals(2, child_lua("return editors()"))
+        if which == "original" then child_lua("vim.api.nvim_set_current_win(editor)") end
+        child_lua("vim.cmd('quit')")
+        vim.wait(60)
+        local label = command .. "/" .. which
+        -- The surviving editor keeps its header; the renderer never switched.
+        assert.is_true(child_lua("return runtime.selected()"), label)
+        assert.is_true(child_lua("return runtime.active()"), label)
+        assert.is_true(child_lua("return runtime.owns(header_win())"), label)
+        assert.equals(0, child_lua("return vim.o.showtabline"), label)
+        assert.equals(1, child_lua("return editors()"), label)
+        if which == "new" then assert.equals(header, child_lua("return header_win()"), label) end
+        -- The header still works after the split closes.
+        input("<C-w>k")
+        assert.is_true(child_lua("return runtime.owns(vim.api.nvim_get_current_win())"), label)
+        input("l")
+        -- Read the handle directly: the original editor window id is gone in this case.
+        assert.is_truthy(child_lua("return runtime.handles()[vim.api.nvim_get_current_tabpage()].candidate"), label)
+        input("<Esc>")
+        assert.is_false(child_lua("return runtime.owns(vim.api.nvim_get_current_win())"), label)
+        vim.fn.jobstop(child)
+        child = nil
+      end
     end
   end)
 
@@ -704,34 +867,47 @@ describe("Multiline runtime", function()
     frame = { valid = false, rows = {} }
     runtime.enable(options, hooks)
     runtime.flush("test")
+    -- Temporarily unavailable, not switched: no header, no leaked scratch resources,
+    -- and native stays hidden because multiline is still the configured renderer.
     assert.is_false(runtime.active())
+    assert.is_true(runtime.selected())
     assert.same({}, runtime.handles())
     assert.same(buffers, api.nvim_list_bufs())
     assert.same({ editor }, api.nvim_tabpage_list_wins(0))
-    assert.equals(2, vim.o.showtabline)
+    assert.equals(0, vim.o.showtabline)
   end)
 
-  it("falls back globally on an invalid frame and retries only after a resize", function()
+  it("keeps native hidden on an invalid frame and recovers on any event without spinning", function()
     runtime.enable(options, hooks)
     runtime.flush("test")
     local header = runtime.handles()[api.nvim_get_current_tabpage()].win
     local valid = vim.deepcopy(frame)
     frame = { valid = false, rows = {}, first_row = 1, total_rows = 0 }
     runtime.flush("ui.refresh")
+    -- No header, but the native single row must not reappear.
     assert.is_false(runtime.active())
+    assert.is_true(runtime.selected())
     assert.is_false(api.nvim_win_is_valid(header))
-    assert.equals(2, vim.o.showtabline)
+    assert.equals(0, vim.o.showtabline)
+    -- Unavailability must not spin: with no new events there are no new frame calls.
+    calls = {}
+    vim.wait(40)
+    assert.equals(0, #calls)
+    -- One failing retry per event, not a loop.
+    api.nvim_exec_autocmds("BufEnter", { modeline = false })
+    vim.wait(30)
+    assert.equals(1, #calls)
+    assert.is_false(runtime.active())
+    assert.equals(0, vim.o.showtabline)
+    -- Recovery is event driven and not limited to resize.
     calls = {}
     frame = valid
-    runtime.request("BufEnter")
-    runtime.flush("ui.refresh")
-    vim.wait(20)
-    assert.equals(0, #calls)
-    api.nvim_exec_autocmds("VimResized", { modeline = false })
-    vim.wait(20)
+    api.nvim_exec_autocmds("BufEnter", { modeline = false })
+    vim.wait(30)
     assert.is_true(runtime.active())
     assert.equals(0, vim.o.showtabline)
     assert.equals(1, #calls)
+    assert.is_true(runtime.owns(runtime.handles()[api.nvim_get_current_tabpage()].win))
   end)
 
   it("rolls back scratch allocation when a fixed editing window leaves no header height", function()
@@ -744,35 +920,48 @@ describe("Multiline runtime", function()
     runtime.enable(options, hooks)
     local ok, err = pcall(runtime.flush, "test")
     local active, windows, after = runtime.active(), #api.nvim_list_wins(), api.nvim_list_bufs()
+    local selected = runtime.selected()
     vim.o.winminheight = minimum
     vim.o.winheight = preferred
     vim.wo[editor].winfixheight = false
     assert.is_true(ok, err)
+    -- Allocation failure is temporary unavailability: nothing is left behind, and the
+    -- native single row stays hidden because multiline is still the selected renderer.
     assert.is_false(active)
+    assert.is_true(selected)
     assert.equals(1, windows)
     assert.same(buffers, after)
-    assert.equals(2, vim.o.showtabline)
+    assert.equals(0, vim.o.showtabline)
   end)
 
-  it("suspends globally after manual header closure or only until explicit enable", function()
+  it("recreates the header after manual closure or :only without ever showing native", function()
     runtime.enable(options, hooks)
     runtime.flush("test")
-    local header = runtime.handles()[api.nvim_get_current_tabpage()].win
+    local tab = api.nvim_get_current_tabpage()
+    local header = runtime.handles()[tab].win
     api.nvim_win_close(header, true)
-    vim.wait(20)
-    assert.is_false(runtime.active())
-    assert.equals(2, vim.o.showtabline)
-    runtime.request("ui.refresh")
-    api.nvim_exec_autocmds("VimResized", { modeline = false })
-    vim.wait(20)
-    assert.equals(1, #api.nvim_list_wins())
-    runtime.enable(options, hooks)
-    runtime.flush("test")
+    -- Native must not appear in the window between disposal and recreation.
+    assert.equals(0, vim.o.showtabline)
+    assert.is_true(runtime.selected())
+    vim.wait(60)
+    -- Settled: a fresh header replaces the closed one; no explicit setup() needed.
     assert.is_true(runtime.active())
+    assert.equals(0, vim.o.showtabline)
     assert.equals(2, #api.nvim_list_wins())
+    local recreated = runtime.handles()[tab].win
+    assert.is_true(runtime.owns(recreated))
+    assert.not_equals(header, recreated)
     vim.cmd("only")
-    vim.wait(20)
-    assert.is_false(runtime.active())
+    assert.equals(0, vim.o.showtabline)
+    vim.wait(60)
+    assert.is_true(runtime.active())
+    assert.is_true(runtime.owns(runtime.handles()[tab].win))
+    assert.equals(2, #api.nvim_list_wins())
+    assert.equals(0, vim.o.showtabline)
+    -- Only an explicit disable() restores the native single row.
+    runtime.disable()
+    assert.is_false(runtime.selected())
+    assert.equals(2, vim.o.showtabline)
     assert.equals(1, #api.nvim_list_wins())
   end)
 
@@ -829,6 +1018,101 @@ describe("Multiline runtime", function()
       vim.fn.jobstop(child)
       child = nil
     end
+  end)
+
+  it("removes only the header before the last editor quits beside a sidebar", function()
+    start_child()
+    local result = child_lua([=[
+      local sidebar_buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[sidebar_buf].filetype = "neo-tree"
+      local sidebar = vim.api.nvim_open_win(sidebar_buf, false, { split = "left", win = editor, width = 20 })
+      local header = runtime.handles()[tab].win
+      vim.api.nvim_set_current_win(editor)
+      vim.cmd("quit")
+      return { editor = vim.api.nvim_win_is_valid(editor), header = vim.api.nvim_win_is_valid(header),
+        sidebar = vim.api.nvim_win_is_valid(sidebar), selected = runtime.selected(), native = vim.o.showtabline }
+    ]=])
+    assert.same({ editor = false, header = false, sidebar = true, selected = true, native = 0 }, result)
+  end)
+
+  it("does not tear down the header when quitting a utility split", function()
+    start_child()
+    assert.is_true(child_lua([=[
+      local utility = vim.api.nvim_create_buf(false, true)
+      local win = vim.api.nvim_open_win(utility, true, { split = "below", win = editor, height = 3 })
+      local header = runtime.handles()[tab].win
+      vim.cmd("quit")
+      return vim.api.nvim_win_is_valid(editor) and not vim.api.nvim_win_is_valid(win)
+        and runtime.owns(header) and vim.o.showtabline == 0
+    ]=]))
+  end)
+
+  it("quits one tab without removing another tab's header", function()
+    start_child()
+    child_lua([=[
+      vim.cmd("tabnew")
+      other_tab = vim.api.nvim_get_current_tabpage()
+      runtime.flush("test")
+      other_header = runtime.handles()[other_tab].win
+      vim.api.nvim_set_current_tabpage(tab)
+      vim.api.nvim_set_current_win(editor)
+      vim.cmd("quit")
+    ]=])
+    vim.wait(40)
+    assert.is_true(child_lua([=[
+      return not vim.api.nvim_tabpage_is_valid(tab) and runtime.handles()[tab] == nil
+        and runtime.handles()[other_tab].win == other_header and runtime.owns(other_header)
+        and runtime.selected() and vim.o.showtabline == 0
+    ]=]))
+    input("<C-w>k")
+    input("<Esc>")
+    assert.is_false(child_lua("return runtime.owns(vim.api.nvim_get_current_win())"))
+  end)
+
+  it("preserves another tab's viewport when quitting a tab with no header", function()
+    real_layout(30)
+    child_lua([=[
+      local original_frame = hooks.frame
+      local h = runtime.handles()[tab]
+      h.first_row = 7
+      runtime.flush("scroll")
+      saved_header, saved_row = h.win, h.first_row
+      vim.cmd("tabnew")
+      unavailable_tab = vim.api.nvim_get_current_tabpage()
+      hooks.frame = function(...)
+        if vim.api.nvim_get_current_tabpage() == unavailable_tab then return { valid = false } end
+        return original_frame(...)
+      end
+      runtime.flush("test")
+      assert(runtime.handles()[unavailable_tab] == nil)
+      vim.cmd("quit")
+    ]=])
+    vim.wait(60)
+    assert.is_true(child_lua([=[
+      local h = runtime.handles()[tab]
+      return h.win == saved_header and h.first_row == saved_row
+        and runtime.owns(saved_header) and vim.o.showtabline == 0
+    ]=]))
+  end)
+
+  it("allows qall to exit and retains multiline after a refused dirty qall", function()
+    start_child()
+    child_lua("vim.cmd('tabnew'); runtime.flush('test')")
+    vim.fn.rpcnotify(child, "nvim_command", "qall")
+    assert.equals(0, vim.fn.jobwait({ child }, 1000)[1])
+    child = nil
+    start_child()
+    child_lua([=[
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, { "unsaved" })
+      local ok = pcall(vim.cmd, "qall")
+      assert(not ok)
+    ]=])
+    vim.wait(40)
+    assert.is_true(child_lua([=[
+      local h = runtime.handles()[tab]
+      return runtime.selected() and vim.o.showtabline == 0 and h and runtime.owns(h.win)
+        and vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(editor), 0, 1, false)[1] == "unsaved"
+    ]=]))
   end)
 
   it("tears down headers before quit so clean exits and modified-buffer checks stay native", function()
@@ -917,21 +1201,47 @@ describe("Multiline runtime", function()
     assert.equals(1, #api.nvim_list_wins())
   end)
 
-  it("resets the render guard after a failing frame and restores native visibility", function()
-    runtime.enable(options, hooks)
-    runtime.flush("test")
-    local normal = hooks.frame
-    hooks.frame = function() error("broken formatter") end
-    local ok, err = pcall(runtime.flush, "test")
-    assert.is_true(ok, err)
-    assert.is_false(runtime.active())
-    assert.equals(1, #api.nvim_list_wins())
-    assert.equals(2, vim.o.showtabline)
-    hooks.frame = normal
-    api.nvim_exec_autocmds("VimResized", { modeline = false })
-    vim.wait(20)
-    assert.is_true(runtime.active())
-    assert.equals(2, #api.nvim_list_wins())
+  it("warns once for a real error, resets the guard and keeps native hidden", function()
+    local notifications = {}
+    local notify = vim.notify
+    vim.notify = function(message, level) notifications[#notifications + 1] = { message = message, level = level } end
+    local finally_ok, finally_err = pcall(function()
+      runtime.enable(options, hooks)
+      runtime.flush("test")
+      local normal = hooks.frame
+      hooks.frame = function() error("broken formatter") end
+      local ok, err = pcall(runtime.flush, "test")
+      assert.is_true(ok, err)
+      -- A genuine error is temporary unavailability, not a switch to native.
+      assert.is_false(runtime.active())
+      assert.is_true(runtime.selected())
+      assert.equals(1, #api.nvim_list_wins())
+      assert.equals(0, vim.o.showtabline)
+      -- Warned exactly once, with the error text, for the whole failing episode.
+      assert.equals(1, #notifications)
+      assert.equals(vim.log.levels.WARN, notifications[1].level)
+      assert.is_truthy(notifications[1].message:find("broken formatter", 1, true))
+      for _ = 1, 3 do
+        api.nvim_exec_autocmds("BufEnter", { modeline = false })
+        vim.wait(20)
+      end
+      assert.equals(1, #notifications)
+      assert.equals(0, vim.o.showtabline)
+      -- Recovery clears the guard and re-arms the warning for a later, distinct failure.
+      hooks.frame = normal
+      api.nvim_exec_autocmds("BufEnter", { modeline = false })
+      vim.wait(30)
+      assert.is_true(runtime.active())
+      assert.equals(2, #api.nvim_list_wins())
+      assert.equals(0, vim.o.showtabline)
+      hooks.frame = function() error("second failure") end
+      runtime.flush("test")
+      assert.equals(2, #notifications)
+      assert.is_truthy(notifications[2].message:find("second failure", 1, true))
+      hooks.frame = normal
+    end)
+    vim.notify = notify
+    assert.is_true(finally_ok, tostring(finally_err))
   end)
 
   it("relinquishes a header window if it now displays a foreign user buffer", function()

@@ -1,0 +1,34 @@
+==============================================================================
+NUMBERS                                                    *bufferline-numbers*
+
+You can prefix buffer names with either the `ordinal` or `buffer id`, using
+the `numbers` option. Currently this can be specified as either a string of
+`buffer_id` | `ordinal` or a function This function allows maximum flexibility
+in determining the appearance of this section.
+
+It is passed a table with the following keys:
+  * `raise` - a helper function to convert the passed number to superscript e.g. `raise(id)`.
+  * `lower` - a helper function to convert the passed number to subscript e.g. `lower(id)`.
+  * `ordinal` - The buffer ordinal number.
+  * `id` - The buffer ID.
+>
+  -- For ⁸·₂
+  numbers = function(opts)
+    return string.format('%s·%s', opts.raise(opts.id), opts.lower(opts.ordinal))
+  end,
+
+  -- For ₈.₂
+  numbers = function(opts)
+    return string.format('%s.%s', opts.lower(opts.id), opts.lower(opts.ordinal))
+  end,
+
+  -- For 2.)8.) - change the order of arguments to change the order in the string
+  numbers = function(opts)
+    return string.format('%s.)%s.)', opts.ordinal, opts.id)
+  end,
+
+  -- For 8|² -
+  numbers = function(opts)
+    return string.format('%s|%s', opts.id, opts.raise(opts.ordinal))
+  end,
+<

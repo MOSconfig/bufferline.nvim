@@ -1,8 +1,12 @@
-*bufferline.nvim*   For Neovim version 0.5+   Last change: 2021 August 20
+*bufferline.nvim*   Neovim 0.8+ (multiline: 0.12+)
 
 A snazzy bufferline for neovim written in lua
 
 Author: Akin Sowemimo
+
+GENERATED FILE. Do not edit doc/bufferline.txt by hand. It is assembled from
+the authored sources in wiki/help/ by `python3 scripts/gen_help.py`. Run
+`python3 scripts/gen_help.py --check` to verify it is in sync.
 
 ==============================================================================
 CONTENTS                                      *bufferline*
@@ -30,7 +34,6 @@ Mouse actions..........................: |bufferline-mouse-actions|
 Custom areas...........................: |bufferline-custom-areas|
 Working with Elements..................: |bufferline-working-with-elements|
 Issues.................................: |bufferline-issues|
-
 
 ==============================================================================
 INTRODUCTION				        *bufferline-introduction*
@@ -248,13 +251,23 @@ enter the header. Only the header scratch buffer has these Normal-mode maps:
     <CR>        Run the candidate's configured left-click action in the captured
                 ordinary editor window, falling back to another valid editor.
     <Esc>       Return to that editor without selecting a buffer.
+    x           Run close_command on the candidate without activating it.
+                Works with close icons hidden. Retains header focus and selects
+                the next surviving neighbor (previous at the end). A refused
+                close retains the candidate. Configure a nonforced close_command
+                to protect unsaved buffers.
 
-The candidate uses an IncSearch highlight distinct from the active buffer.
+The whole active entry uses BufferLineBufferSelected; the whole keyboard
+candidate uses IncSearch, including icons, padding, separators and suffixes.
 Navigation does not change the editor buffer until <CR>. Groups, close icons,
 and overflow controls are not keyboard candidates. Candidate buffer IDs survive
 resize/repacking; removed or hidden candidates reconcile to the active buffer
 (or first available candidate). Wheel scrolling works with either editor or
 header focus and does not select a buffer. No global mappings are installed.
+
+There is no `q` mapping in the header. The maps above are the complete set:
+h, j, k, l, x, <CR> and <Esc>. In the header `q` keeps its usual Normal-mode
+meaning and starts a macro recording, so use <Esc> to leave the header.
 The header stays in its editor region when a full-height sidebar opens later.
 
 Restoring single-row mode ~
@@ -271,18 +284,43 @@ from the multiline copy.
 <
 Lifecycle and limitations ~
 
-- Closing the header or using |:only| suspends multiline globally across all
-  tabpages. It stays suspended until setup() is called again with the complete
-  multiline configuration, e.g. `bufferline.setup(multiline_config)` above.
-- Disabling, fallback, session loading, or auto-hide while the header is focused
-  returns to the remembered eligible editor (or another available editor).
-  |:q| in the header tears down the header and returns to the editor; use |:q|
-  there to quit normally. Unsaved editor buffers are never deleted by teardown.
-- If the UI is too small, multiline falls back globally to the native single
-  row. This is temporary: a sufficient resize resumes multiline automatically.
-- |:close|, |:hide|, or an API close of the last editing window can report |E855|
-  and suspend multiline. In the last tabpage the editing window remains; with
-  other tabs open, Neovim may finish closing that tab despite the error. Use
+`options.multiline.enabled` is the only renderer selector. While it is enabled
+the native single row never reappears, not even while no header is on screen.
+Only setup() with `enabled = false` switches back, e.g. the single_row config
+above. Configured selection and momentary readiness are separate concerns:
+
+- Temporarily unavailable: the header for a tabpage is removed and the tabline
+  is left empty when it cannot be drawn (too little height, an unusable frame,
+  a failed allocation), when the header window is closed manually or by |:only|,
+  or when a foreign buffer takes over the header window. Only that tabpage is
+  affected; other tabpages keep their headers.
+- Recovery is event-driven. The next buffer, window, resize or refresh event
+  redraws the header. There is no polling and no retry loop, and setup() does
+  not need to be called again. A genuine rendering error is reported once per
+  failing episode; capacity limits are not reported at all.
+- Commands while unavailable: |BufferLinePick| and the other pick commands do
+  not block for a keypress when no header is on screen. They report
+  "cannot pick while the multiline header is unavailable" and return, instead
+  of waiting for input against letters you cannot see. Cycling commands such as
+  |BufferLineCycleNext| keep working: they recompute the current state before
+  navigating, so ordering stays correct even when nothing is rendered.
+- Quitting: closing one editor split with |:q| keeps the header. When the last
+  editor of a tabpage quits, its header is removed first so it cannot block quit.
+  Sidebars and utility windows do not count as editors; their plugins control
+  automatic closure (for example Neo-tree's close_if_last_window option).
+  A refused quit, such as |E37| for an unsaved buffer, restores the
+  header once the layout settles.
+- Disabling, session loading, or auto-hide while the header is focused returns
+  to the remembered eligible editor (or another available editor). In the
+  header, <Esc> returns to the editor and never quits it. |:q| typed in the
+  header does close the header window and return you to the editor, and the
+  header is recreated once the layout settles. Unsaved editor buffers are
+  never deleted by teardown.
+- Loading a session pauses multiline: no header and no native row until
+  |SessionLoadPost|, after which the header returns on its own.
+- |:close|, |:hide|, or an API close of the last editing window can report |E855|.
+  In the last tabpage the editing window remains; with other tabs open, Neovim
+  may finish closing that tab despite the error. Use
   |:q| for ordinary quitting. Native unsaved-change checks remain; with 'hidden'
   enabled, modified buffers can remain hidden as usual.
 - Disable multiline before |:mksession|, using the complete single-row setup
@@ -701,7 +739,6 @@ A user can also execute arbitrary functions against a buffer using the
         command -count Bdel <Cmd>lua _G.bdel(<count>)<CR>
     ]]
 
-
 ==============================================================================
 SIDEBAR OFFSET                                           *bufferline-offset*
 
@@ -774,8 +811,8 @@ this can also be mapped to something like
   nnoremap <silent> gD :BufferLinePickClose<CR>
 >
 
-You can configure the characters used for selecting buffers using the 
-`pick.alphabet` option. By default, both uppercase and lowercase 
+You can configure the characters used for selecting buffers using the
+`pick.alphabet` option. By default, both uppercase and lowercase
 alphanumeric characters are used.
 >lua
     options = {
@@ -1313,7 +1350,6 @@ Here's an example that will let you close all open buffers.
         end
     end
 <
-
 
 ==============================================================================
 COLORSCHEME DEVELOPMENT                     *bufferline-colorscheme-development*

@@ -163,19 +163,20 @@ function M.plan(entries, geometry, viewport)
     offset(row, geometry.left, geometry.fill_hl)
     gutter(row, gutter_width, index == first and first > 1 and before or nil, -1, geometry)
     for _, item in ipairs(packed_row.entries) do
+      local byte_start = #row.text
       local position
       for _, run in ipairs(item.runs) do
         local action = run.action
         if item.entry.focusable and action and action.kind == "click" and run.text ~= "" then
           if not seen[action.id] then
             position = { id = action.id, row = index, col = displaywidth(row.text) }
-            if is_visible then position.byte_col = #row.text end
+            if is_visible then position.byte_col = byte_start end
             positions[#positions + 1], seen[action.id] = position, true
           end
-          if position and is_visible then position.byte_end = #row.text + #run.text end
         end
         append(row, run.text, run.highlight, run.action)
       end
+      if position and is_visible then position.byte_end = #row.text end
       if is_visible and item.entry.focusable then visible[#visible + 1] = item.entry.component end
     end
     append(

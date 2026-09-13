@@ -1,0 +1,9 @@
+*bufferline.nvim*   Neovim 0.8+ (multiline: 0.12+)
+
+A snazzy bufferline for neovim written in lua
+
+Author: Akin Sowemimo
+
+GENERATED FILE. Do not edit doc/bufferline.txt by hand. It is assembled from
+the authored sources in wiki/help/ by `python3 scripts/gen_help.py`. Run
+`python3 scripts/gen_help.py --check` to verify it is in sync.

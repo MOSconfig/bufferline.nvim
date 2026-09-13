@@ -29,6 +29,45 @@ describe("Multiline shared state", function()
     assert.same(before, nvim_bufferline())
   end)
 
+  it("keeps selection authoritative and cycles with no renderable header", function()
+    vim.cmd("edit mode-first.txt")
+    local first = vim.api.nvim_get_current_buf()
+    bufferline.setup({ options = { multiline = { enabled = true }, persist_buffer_sort = false } })
+    local runtime = require("bufferline.multiline.runtime")
+    runtime.flush("test")
+    local plan = require("bufferline.multiline.layout").plan
+    require("bufferline.multiline.layout").plan = function() return { valid = false } end
+    local read, notify = vim.fn.getchar, vim.notify
+    local ok, err = pcall(function()
+      runtime.flush("test")
+      local second = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_buf_set_name(second, "mode-second.txt")
+      vim.o.showtabline = 2
+      vim.api.nvim_exec_autocmds("BufAdd", {})
+      vim.wait(20)
+      assert.equals(0, vim.o.showtabline)
+      assert.equals("", nvim_bufferline())
+      require("bufferline.commands").cycle(1)
+      assert.equals(second, vim.api.nvim_get_current_buf())
+      require("bufferline.commands").cycle(-1)
+      assert.equals(first, vim.api.nvim_get_current_buf())
+      local warned = false
+      vim.notify = function() warned = true end
+      vim.fn.getchar = function() error("must not wait for invisible pick labels") end
+      require("bufferline.pick").choose_then(function() error("must not activate") end)
+      assert.is_true(warned)
+      assert.is_false(state.is_picking)
+      assert.is_true(runtime.selected())
+      assert.equals(0, vim.o.showtabline)
+    end)
+    require("bufferline.multiline.layout").plan = plan
+    vim.fn.getchar, vim.notify = read, notify
+    assert.is_true(ok, err)
+    bufferline.setup({ options = { multiline = { enabled = false }, persist_buffer_sort = false } })
+    assert.is_false(runtime.selected())
+    assert.is_true(#nvim_bufferline() > 0)
+  end)
+
   it("dispatches a click in its captured editing window", function()
     vim.cmd("edit origin.txt")
     local origin = vim.api.nvim_get_current_win()

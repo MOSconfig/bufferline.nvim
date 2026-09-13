@@ -89,7 +89,10 @@ end
 --- If the item count has changed and the next tabline status is different then update it
 local function toggle_bufferline(saved)
   local runtime = package.loaded["bufferline.multiline.runtime"]
-  if runtime and runtime.active() then return end
+  if runtime and runtime.selected() then
+    vim.o.showtabline = 0
+    return
+  end
   if not config.options.auto_toggle_bufferline then
     if saved ~= nil then vim.o.showtabline = saved end
     return
@@ -102,7 +105,7 @@ end
 ---@private
 function _G.nvim_bufferline()
   local runtime = package.loaded["bufferline.multiline.runtime"]
-  if runtime and runtime.active() then return "", {} end
+  if runtime and runtime.selected() then return "", {} end
   toggle_bufferline() -- Always populate state regardless of if tabline status is less than 2 #352
   return bufferline()
 end

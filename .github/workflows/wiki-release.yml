@@ -1,0 +1,180 @@
+name: Publish wiki
+
+# Publishes the authored documentation in wiki/ to this repository's GitHub wiki.
+#
+# Prerequisites (see wiki/Documentation-Pipeline.md):
+#   1. The GitHub wiki must already be enabled AND initialized. GitHub does not
+#      create <repo>.wiki.git until the first page is saved through the web UI.
+#   2. A dedicated `WIKI_TOKEN` repository secret with permission to write this
+#      repository's wiki. The built-in GITHUB_TOKEN does not cover wiki pushes.
+#      The secret is optional: without it this workflow validates the sources and
+#      stops before any push instead of failing.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Ref (tag, branch or SHA) whose wiki/ directory to publish"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: false
+
+jobs:
+  # Validation runs with no access to the wiki secret, so documentation sources
+  # from the requested ref are never executed alongside a credential.
+  validate:
+    name: Validate documentation sources
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Record validated commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Verify the generated help file is in sync
+        run: python3 scripts/gen_help.py --check
+
+      - name: Run documentation tests
+        run: |
+          python3 scripts/test_docs.py
+          python3 scripts/test_wiki_sync.py
+
+      - name: Verify the wiki directory is publishable
+        run: |
+          set -euo pipefail
+          test -d wiki || { echo "no wiki/ directory to publish"; exit 1; }
+          count=$(find wiki -maxdepth 1 -type f -name '*.md' | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "wiki/ contains no Markdown pages"
+            exit 1
+          fi
+          echo "found $count wiki page(s)"
+
+  publish:
+    name: Publish to GitHub wiki
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+
+      - name: Check for the wiki token
+        id: token
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${WIKI_TOKEN:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::WIKI_TOKEN is not configured; skipping the wiki push."
+          fi
+
+      - name: Sync wiki pages
+        if: steps.token.outputs.present == 'true'
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+          WIKI_REMOTE: https://github.com/${{ github.repository }}.wiki.git
+          WIKI_USER: ${{ github.actor }}
+          SOURCE_REF: ${{ needs.validate.outputs.sha }}
+        run: |
+          # BEGIN sync-script
+          set -euo pipefail
+
+          : "${WIKI_TOKEN:?WIKI_TOKEN is required}"
+          : "${WIKI_REMOTE:?WIKI_REMOTE is required}"
+          echo "::add-mask::${WIKI_TOKEN}"
+
+          [ -d wiki ] && [ ! -L wiki ] || { echo "wiki/ must be a real directory"; exit 1; }
+          for page in wiki/*.md; do
+            [ -f "$page" ] && [ ! -L "$page" ] || { echo "Wiki pages must be regular files"; exit 1; }
+          done
+
+          workdir="$(mktemp -d)"
+          cleanup() {
+            rm -rf "$workdir"
+          }
+          trap cleanup EXIT
+
+          # Feed the credential to git through an askpass helper so it never
+          # appears in a remote URL, in argv, or in the workflow log.
+          askpass="$workdir/askpass.sh"
+          cat > "$askpass" <<'ASKPASS'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' "${WIKI_GIT_USER:-x-access-token}" ;;
+            *) printf '%s\n' "$WIKI_TOKEN" ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          export WIKI_GIT_USER="${WIKI_USER:-x-access-token}"
+
+          clone="$workdir/wiki"
+          if ! git clone --depth 1 --quiet "$WIKI_REMOTE" "$clone"; then
+            echo "Could not clone the wiki repository."
+            echo "Enable the wiki and save one page through the GitHub UI first;"
+            echo "GitHub does not create the wiki repository until then."
+            exit 1
+          fi
+
+          # Copy only the authored pages. Anything already in the wiki that this
+          # repository does not author is left untouched.
+          copied=0
+          for page in wiki/*.md; do
+            [ -e "$page" ] || continue
+            target="$clone/$(basename -- "$page")"
+            [ ! -L "$target" ] || { echo "Refusing to replace a wiki symlink"; exit 1; }
+            cp -- "$page" "$target"
+            copied=$((copied + 1))
+          done
+          echo "staged $copied page(s)"
+
+          cd "$clone"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A -- '*.md'
+          if git diff --cached --quiet; then
+            echo "wiki is already up to date"
+            exit 0
+          fi
+
+          git commit --quiet -m "docs: sync wiki from ${SOURCE_REF:-unknown ref}"
+
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          git push --quiet origin "HEAD:${branch}"
+          echo "published wiki pages to ${branch}"
+          # END sync-script
+
+      - name: Report skipped push
+        if: steps.token.outputs.present != 'true'
+        run: |
+          echo "Documentation sources validated, but nothing was published."
+          echo "Add a WIKI_TOKEN repository secret to enable publishing."

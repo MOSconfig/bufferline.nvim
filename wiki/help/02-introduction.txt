@@ -1,0 +1,10 @@
+==============================================================================
+INTRODUCTION				        *bufferline-introduction*
+
+A _snazzy_ 💅 buffer line (tab integration) for Neovim built
+using `lua`.
+
+This plugin shamelessly attempts to emulate the aesthetics of GUI text
+editors/Doom Emacs. It was inspired by a screenshot of DOOM Emacs using
+centaur tabs (https://github.com/ema2159/centaur-tabs). I don't intend to copy
+all of it's functionality though.

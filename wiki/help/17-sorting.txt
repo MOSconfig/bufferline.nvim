@@ -1,0 +1,36 @@
+==============================================================================
+SORTING					               *bufferline-sorting*
+
+Bufferline allows you to sort the visible buffers by `extension` or `directory`: >vim
+
+    " Using vim commands
+    :BufferLineSortByExtension
+    :BufferLineSortByDirectory
+    :BufferLineSortByTabs
+
+    -- Or using lua functions
+    :lua require'bufferline'.sort_by('extension')`
+    :lua require'bufferline'.sort_by('directory')`
+    :lua require'bufferline'.sort_by('tabs')`
+
+By default bufferline will sort by buffer number which is an integer value
+provided by vim to identify a buffer that increases as new buffers are opened
+this means that new buffers are placed at the end of the bufferline.
+
+For more advanced usage you can provide a custom compare function which
+will receive two buffers to compare. You can see what fields
+are available to use using >lua
+
+    sort_by = function(buffer_a, buffer_b)
+        print(vim.inspect(buffer_a))
+        -- add custom logic
+        local modified_a = vim.fn.getftime(buffer_a.path)
+        local modified_b = vim.fn.getftime(buffer_b.path)
+        return modified_a > modified_b
+    end
+<
+
+When using a sorted bufferline it's advisable that you use the
+`BufferLineCycleNext` and `BufferLineCyclePrev` commands since these will
+traverse the bufferline bufferlist in order whereas `bnext` and `bprev` will
+cycle buffers according to the buffer numbers given by vim.

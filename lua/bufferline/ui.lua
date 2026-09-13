@@ -128,7 +128,8 @@ local function get_marker_size(count, element_size) return count > 0 and strwidt
 
 function M.refresh(opts)
   local runtime = package.loaded["bufferline.multiline.runtime"]
-  if runtime and runtime.active() then
+  -- Refresh the selected renderer even while its header is temporarily unavailable.
+  if runtime and runtime.selected() then
     if opts and opts.sync then
       runtime.flush("pick")
       vim.cmd.redraw()

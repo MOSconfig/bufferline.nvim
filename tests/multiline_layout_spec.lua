@@ -26,7 +26,7 @@ describe("Multiline layout", function()
     local plan = require("bufferline.multiline.layout").plan
     local frame = plan(entries, geo, { first_row = 1 })
     assert.same({
-      { id = 1, row = 1, col = 6, byte_col = 7, byte_end = 13 },
+      { id = 1, row = 1, col = 6, byte_col = 7, byte_end = 14 },
       { id = 2, row = 1, col = 10, byte_col = 14, byte_end = 16 },
       { id = 3, row = 3, col = 6 },
       { id = 4, row = 4, col = 6 },
@@ -35,6 +35,20 @@ describe("Multiline layout", function()
     assert.same({ id = 1, row = 1, col = 6 }, scrolled.positions[1])
     assert.same({ id = 3, row = 3, col = 6, byte_col = 9, byte_end = 17 }, scrolled.positions[3])
     assert.same({}, plan({}, geo).positions)
+  end)
+
+  it("highlights whole entries without absorbing neighboring entries or gutters", function()
+    local item = entry(1, "界")
+    table.insert(item.runs, 1, { text = "┃ ", highlight = "Separator" })
+    item.runs[#item.runs + 1] = { text = " × ", highlight = "Close", action = { kind = "close", id = 1 } }
+    local frame = require("bufferline.multiline.layout").plan({ item, entry(2, "two") }, geometry(20, 1), {})
+    assert.equals(0, frame.positions[1].byte_col)
+    assert.equals(#"┃ 界 × ", frame.positions[1].byte_end)
+    assert.equals(#"┃ 界 × ", frame.positions[2].byte_col)
+    local clipped = require("bufferline.multiline.layout").plan({ item }, geometry(4, 1), {})
+    assert.equals(0, clipped.positions[1].byte_col)
+    assert.equals("┃ … ", clipped.rows[1].text)
+    assert.equals(#"┃ …", clipped.positions[1].byte_end)
   end)
 
   it("keeps exact-fit entries on one row without overflow controls", function()

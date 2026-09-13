@@ -216,8 +216,12 @@ end
 --- @param direction number
 function M.cycle(direction)
   local runtime = package.loaded["bufferline.multiline.runtime"]
-  if runtime and runtime.active() then runtime.flush("navigate") end
-  if vim.o.showtabline == 0 and not (runtime and runtime.active()) then
+  local multiline = runtime and runtime.selected()
+  if multiline then
+    require("bufferline").compute()
+    runtime.flush("navigate")
+  end
+  if vim.o.showtabline == 0 and not multiline then
     if direction > 0 then vim.cmd("bnext") end
     if direction < 0 then vim.cmd("bprev") end
     return

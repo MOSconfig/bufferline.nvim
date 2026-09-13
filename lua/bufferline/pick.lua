@@ -18,6 +18,14 @@ function M.choose_then(func)
   state.is_picking = true
   local ok, err = xpcall(function()
     ui.refresh({ sync = true })
+    local runtime = package.loaded["bufferline.multiline.runtime"]
+    if runtime and runtime.selected() then
+      local handle = runtime.handles()[vim.api.nvim_get_current_tabpage()]
+      if not handle or not runtime.owns(handle.win) then
+        vim.notify("bufferline: cannot pick while the multiline header is unavailable", vim.log.levels.WARN)
+        return
+      end
+    end
     local read, char = pcall(fn.getchar)
     if not read then return end
     local letter = fn.nr2char(char)

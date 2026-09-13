@@ -16,7 +16,7 @@ Native single-row mode remains the default and supports Neovim 0.8+. The opt-in 
 - `offset.lua`: sidebar geometry; exclude positively owned header windows from the underlying layout.
 - `multiline/options.lua`: side-effect-free opt-in validation before setup mutation.
 - `multiline/layout.lua`: ordered row packing, Unicode clipping, overflow viewport and cell hit ranges.
-- `multiline/runtime.lua`: header ownership, scheduled rendering, input observation, focus, lifecycle and native fallback.
+- `multiline/runtime.lua`: header ownership, scheduled rendering, input observation, focus, and lifecycle. `options.multiline.enabled` is the sole renderer selector: `M.selected()` is the configured choice and only `enable`/`disable` change it, while `M.active()` is momentary readiness. Native visibility is restored only by `disable()`; every unavailable path keeps `showtabline` at 0 and recovers event-driven, per tabpage.
 
 ## Tests
 
@@ -48,11 +48,12 @@ For Lua syntax, use `loadfile` with an explicit `cquit 1` failure path. Check fo
 - Native tabline evaluation cannot drive hidden-tabline state. Multiline refresh is event-driven; avoid feedback loops from painting and stale callbacks after teardown.
 - Picking needs synchronous paint before blocking for input. Mouse tests must send actual input from an editing window, not merely invoke a Lua handler.
 - Verify UI changes in isolated interactive Neovim with multiple buffers, splits, a sidebar, resize and mouse input. Report any unsupported runtime/version or untested behavior.
-- Keep README/help, option types, issue acceptance criteria and tests aligned. Do not weaken assertions or hide errors merely to obtain a passing run.
+- Author documentation under `wiki/`; edit `wiki/help/*.txt` and run `python3 scripts/gen_help.py`, never edit generated `doc/bufferline.txt`. Keep English/Chinese guides and README summaries aligned with the reference and code. Run `python3 scripts/gen_help.py --check`, `python3 scripts/test_docs.py`, and `python3 scripts/test_wiki_sync.py`.
+- Keep option types, issue acceptance criteria and tests aligned. Do not weaken assertions or hide errors merely to obtain a passing run.
 
 ## Known multiline constraints
 
-Custom areas, hover reveal and native tabpage controls are single-row-only. The header consumes real split height and a divider. User mouse mappings retain precedence. Disable multiline before saving a built-in session: the default `blank` session option can serialize scratch windows. Window-close edge behavior and fallback rules are documented in `:help bufferline-multiline`.
+Custom areas, hover reveal and native tabpage controls are single-row-only. The header consumes real split height and a divider. User mouse mappings retain precedence. Disable multiline before saving a built-in session: the default `blank` session option can serialize scratch windows. There is no native single-row fallback while multiline is enabled; window-close, quit and recovery rules are documented in `:help bufferline-multiline`.
 
 ## Delivery
 
