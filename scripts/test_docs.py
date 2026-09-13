@@ -315,6 +315,49 @@ def test_readme_images_and_headings_are_preserved() -> None:
         check(heading in headings, f"README.md dropped heading: {heading}")
 
 
+def test_multiline_preview_and_wiki_quickstart() -> None:
+    previews = []
+    examples = []
+    for path in (README_EN, README_ZH):
+        text = read(path)
+        local_images = {
+            target for target in re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", text)
+            if not target.startswith(("https://", "http://"))
+        }
+        previews.append(local_images)
+        check(
+            "wiki/assets/multiline-buffer-tabs.png" in local_images,
+            f"{path.name} is missing the multiline preview",
+        )
+        for target in local_images:
+            check((ROOT / target).is_file(), f"{path.name} references missing image: {target}")
+        check(not CODE_BLOCK.findall(text), f"{path.name} should link to wiki examples, not duplicate them")
+        guide = WIKI / ("zh-CN-Multiline-Buffer-Tabs.md" if path == README_ZH else "Multiline-Buffer-Tabs.md")
+        snippets = [
+            block for block in CODE_BLOCK.findall(read(guide))
+            if '"MOSconfig/bufferline.nvim"' in block
+        ]
+        check(len(snippets) == 1, f"{guide.name} needs one fork quickstart")
+        examples.append(snippets)
+        if len(snippets) == 1:
+            for setting in (
+                'branch = "main"', 'vim.opt.termguicolors = true',
+                'opts = {', 'mode = "buffers"', 'enabled = true', 'max_rows = 3',
+            ):
+                check(setting in snippets[0], f"{guide.name} quickstart is missing {setting}")
+            check("multiline_config" not in snippets[0], f"{guide.name} uses an undefined configuration")
+    check(previews[0] == previews[1], "README local image references differ between languages")
+    check(examples[0] == examples[1], "Wiki fork quickstarts differ between languages")
+
+    sources = [README_EN, README_ZH, HELP_SOURCES / "05-multiline-buffer-tabs.txt"]
+    sources += list(WIKI.glob("*Multiline-Buffer-Tabs.md"))
+    for path in sources:
+        check(
+            "feat/multiline-buffer-tabs" not in read(path),
+            f"{path.relative_to(ROOT)} still recommends the old feature branch",
+        )
+
+
 def test_no_retired_q_mapping_claim() -> None:
     targets = list(WIKI.glob("*.md")) + list(HELP_SOURCES.glob("*.txt"))
     targets += [README_EN, README_ZH]

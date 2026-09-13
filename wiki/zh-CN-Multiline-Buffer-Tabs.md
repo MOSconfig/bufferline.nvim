@@ -7,11 +7,29 @@
 
 ## 试用
 
-该功能没有指定发布版本。请指向本分支，而不是上游 tag：
+多行功能已包含在本 fork 的 `main` 分支中，而不在上游 tag 中。新配置可使用以下完整的
+lazy.nvim 插件声明：
 
 ```lua
-{ "MOSconfig/bufferline.nvim", branch = "feat/multiline-buffer-tabs", dependencies = "nvim-tree/nvim-web-devicons" }
+{
+  "MOSconfig/bufferline.nvim",
+  branch = "main",
+  dependencies = "nvim-tree/nvim-web-devicons",
+  init = function()
+    vim.opt.termguicolors = true
+  end,
+  opts = {
+    options = {
+      mode = "buffers",
+      multiline = { enabled = true, max_rows = 3 },
+    },
+  },
+}
 ```
+
+已有 bufferline 配置时，请替换插件来源，并将这些选项合入现有的完整配置；不要同时注册两份
+插件。README 预览使用了自定义配色和斜切分隔符。在 `options` 中加入
+`separator_style = "slant"` 可使用该分隔符形状；上面的示例不会替换你的配色方案。
 
 ## 启用
 

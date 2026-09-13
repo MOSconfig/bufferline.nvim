@@ -5,9 +5,9 @@ Multiline is opt-in. The native single-row renderer remains the default, with
 its existing defaults and Neovim 0.8+ minimum unchanged. Multiline requires
 Neovim 0.12+ and `options.mode = "buffers"`.
 
-To try it, target MOSconfig/bufferline.nvim on branch feat/multiline-buffer-tabs
-instead of an upstream tag. No release version is specified for this feature:
-https://github.com/MOSconfig/bufferline.nvim/tree/feat/multiline-buffer-tabs
+Multiline is available on the main branch of MOSconfig/bufferline.nvim, not in
+upstream tags. Install this fork to use it:
+https://github.com/MOSconfig/bufferline.nvim
 
 Add multiline to your complete configuration. Each setup() call takes a complete
 configuration, not an incremental options update. Retain the original table so

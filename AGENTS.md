@@ -6,6 +6,35 @@ This is the `MOSconfig/bufferline.nvim` fork of `akinsho/bufferline.nvim`, a Lua
 
 Native single-row mode remains the default and supports Neovim 0.8+. The opt-in `options.multiline` renderer requires Neovim 0.12+. Do not call new APIs unconditionally from the native path or silently change native defaults.
 
+## Start here
+
+1. Read this guide before editing; `CLAUDE.md` imports it rather than maintaining another policy.
+2. Run the read-only preflight below. Preserve unrelated changes and verify the requested branch/ref before working.
+3. Read only the modules and regression suites relevant to the task, then consult `wiki/` for the public behavior contract. READMEs are feature introductions, not configuration references.
+4. Follow the validation matrix below. Report the commands, results, runtime version and anything not tested; passing syntax checks is not evidence that the UI works.
+
+```sh
+pwd
+git status --short --branch
+git remote -v
+git worktree list
+nvim --version
+python3 --version
+```
+
+### Task map
+
+Paths below are relative to the repository root; module paths in the architecture list are relative to `lua/bufferline/` unless stated otherwise.
+
+| Task | Start with | Regression tests |
+| --- | --- | --- |
+| Setup or renderer selection | `lua/bufferline.lua`, `lua/bufferline/multiline/options.lua` | `tests/config_spec.lua`, `tests/multiline_options_spec.lua`, `tests/multiline_state_spec.lua` |
+| Wrapping, clipping or overflow | `lua/bufferline/multiline/layout.lua` | `tests/multiline_layout_spec.lua` |
+| Highlights or segment conversion | `lua/bufferline/ui.lua` | `tests/ui_spec.lua`, `tests/multiline_segments_spec.lua` |
+| Header lifecycle, focus or mouse | `lua/bufferline/multiline/runtime.lua` | `tests/multiline_runtime_spec.lua`, `tests/multiline_integration_spec.lua` |
+| Picking or sidebar geometry | `lua/bufferline/pick.lua`, `lua/bufferline/offset.lua` | `tests/multiline_pick_spec.lua`, `tests/offset_spec.lua` |
+| Settings or documentation | `wiki/Multiline-Buffer-Tabs.md`, `wiki/help/05-multiline-buffer-tabs.txt` | `scripts/test_docs.py`, `scripts/test_wiki_sync.py` |
+
 ## Architecture
 
 - `lua/bufferline.lua`: public setup/commands, shared component computation, renderer selection and state publication.
@@ -38,6 +67,23 @@ nvim --headless -i NONE -n -u tests/minimal_init.lua \
 With an explicit dependency root, missing dependencies must fail instead of downloading. Without it, the existing initializer may clone into gitignored `.tests/`. Test state is redirected into `.tests/`; never load the live config for automated tests. Run the complete suite after focused tests and inspect errors as well as exit status. A plain `nvim +lua ... +qa` can exit zero despite a Lua error.
 
 For Lua syntax, use `loadfile` with an explicit `cquit 1` failure path. Check formatting with `stylua --check --config-path=stylua.toml lua/` when StyLua is available and run `git diff --check`.
+
+### Validation by change
+
+| Change | Required checks |
+| --- | --- |
+| README, wiki or agent guidance only | Documentation commands below; `git diff --check`; verify new links and preview assets. No Neovim UI run is needed unless examples or behavior change. |
+| Lua behavior or configuration | Failing regression first, focused Plenary suite, full suite, syntax and formatting checks, documentation checks when applicable. |
+| Rendering or input | All Lua checks plus isolated interactive Neovim verification described below. |
+
+```sh
+python3 scripts/gen_help.py --check
+python3 scripts/test_docs.py
+python3 scripts/test_wiki_sync.py
+git diff --check
+```
+
+For authored help changes, run `python3 scripts/gen_help.py` before those checks. Detailed development instructions are in `wiki/Testing-and-Development.md` and `wiki/zh-CN-Testing-and-Development.md`. The existing wiki publisher validates and copies `wiki/*.md` on a published release; editing local sources does not publish them. Do not dispatch it or create a release without a request.
 
 ## Change discipline
 

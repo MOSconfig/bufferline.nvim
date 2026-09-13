@@ -6,11 +6,21 @@
 
 <p align="center">A <i>snazzy</i> 💅 buffer line (with tabpage integration) for Neovim built using <b>lua</b>.</p>
 
+This fork of [akinsho/bufferline.nvim](https://github.com/akinsho/bufferline.nvim)
+adds **[multiline buffer tabs](#multiline-buffer-tabs)**: see more open buffers at once,
+with wrapped rows above the editor and room for your sidebar. Native single-row mode
+remains the default.
+
+![Multiline buffer tabs with slanted styling above the editor, beside a full-height file explorer](wiki/assets/multiline-buffer-tabs.png)
+
+The original single-row experience is still available:
+
 ![Demo GIF](https://user-images.githubusercontent.com/22454918/111992693-9c6a9b00-8b0d-11eb-8c39-19db58583061.gif)
 
 <p align="center">
   <a href="https://github.com/MOSconfig/bufferline.nvim/wiki/Home">Documentation wiki</a> ·
-  <a href="README.zh-CN.md">中文说明</a>
+  <a href="README.zh-CN.md">中文说明</a> ·
+  <a href="AGENTS.md">AI agent guide</a>
 </p>
 
 <!--toc:start-->
@@ -56,28 +66,14 @@ and shipped in this repository — read it with `:help bufferline.nvim`.
 
 ## Installation
 
-```lua
--- using packer.nvim
-use {'akinsho/bufferline.nvim', tag = "*", requires = 'nvim-tree/nvim-web-devicons'}
-
--- using lazy.nvim
-{'akinsho/bufferline.nvim', version = "*", dependencies = 'nvim-tree/nvim-web-devicons'}
-```
-
-Vimscript plugin managers, version pinning and the nvim-0.6.1-compatible `v1.*` tag are
-covered in [Installation and Usage](https://github.com/MOSconfig/bufferline.nvim/wiki/Installation-and-Usage).
+Install this fork to use multiline tabs. Plugin-manager examples and version guidance
+are in [Installation and Usage](https://github.com/MOSconfig/bufferline.nvim/wiki/Installation-and-Usage).
 
 ## Usage
 
-```lua
-vim.opt.termguicolors = true
-require("bufferline").setup{}
-```
-
-`termguicolors` is required, as the plugin reads the hex `gui` colour values of various
-highlight groups. You can close buffers by clicking the close icon or by _right clicking_
-the tab anywhere. See `:h bufferline.nvim` or
+Setup examples and mouse controls are in
 [Installation and Usage](https://github.com/MOSconfig/bufferline.nvim/wiki/Installation-and-Usage).
+For the complete offline reference, use `:help bufferline.nvim`.
 
 ## Configuration
 
@@ -100,28 +96,27 @@ Details and screenshots for every feature below:
 
 #### Multiline buffer tabs
 
-Opt-in multi-row rendering. Requires **Neovim 0.12+** with `mode = "buffers"`; the native
-single-row renderer remains the default and unchanged.
+Keep more open buffers in view instead of squeezing them into one row. This fork's
+opt-in multiline header wraps tabs to the available editor width while full-height
+sidebars stay outside the header, as shown in the preview above.
 
-```lua
-{ "MOSconfig/bufferline.nvim", branch = "feat/multiline-buffer-tabs", dependencies = "nvim-tree/nvim-web-devicons" }
-```
+- **Adaptive rows:** the header grows up to a configurable row limit; overflow controls
+  and the mouse wheel reveal hidden rows. Switching buffers reveals the active row.
+- **Keyboard and mouse navigation:** move through candidates without switching the
+  editor buffer until you confirm, or click a tab to select it.
+- **Familiar styling:** icons, diagnostics, groups, pins and per-buffer close actions
+  work across rows, including slanted styling like the screenshot.
 
-```lua
-multiline_config.options.mode = "buffers"
-multiline_config.options.multiline = { enabled = true, max_rows = 3 }
-bufferline.setup(multiline_config)
-```
+Available on this fork's **`main` branch**; requires **Neovim 0.12+** in buffer mode.
+Native single-row mode remains the default with Neovim 0.8+ support.
 
-`options.multiline.enabled` is the **only** renderer selector — while it is enabled the
-native single row never returns, and there is no fallback to it. The header is a reserved
-split above the editor; when it cannot be drawn it is removed for that tabpage only and
-recovery is event-driven.
+The header uses real split height. Custom areas, hover reveal and native tabpage controls
+are single-row-only; multiline must be disabled before saving a built-in session.
+There is no native single-row fallback while multiline is enabled.
 
-The complete contract — keyboard maps (`h`/`j`/`k`/`l`/`x`/`<CR>`/`<Esc>`, and **no** `q`
-map), quitting, session and API limitations — is in
+Installation, settings, keyboard controls and lifecycle limitations:
 [Multiline Buffer Tabs](https://github.com/MOSconfig/bufferline.nvim/wiki/Multiline-Buffer-Tabs)
-and `:help bufferline-multiline`.
+or `:help bufferline-multiline`.
 
 ---
 
@@ -267,20 +262,6 @@ Both answered in full in
 
 ## Tests
 
-From the repository root:
-
-```sh
-nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua', sequential = true}"
-```
-
-Set `NVIM_TEST_DEPS` to a directory containing existing `plenary.nvim` and
-`nvim-web-devicons` checkouts for offline runs. Use Neovim 0.12+ when testing multiline.
-Documentation has its own stdlib-only checks:
-
-```sh
-python3 scripts/gen_help.py --check
-python3 scripts/test_docs.py
-```
-
-See [Testing and Development](https://github.com/MOSconfig/bufferline.nvim/wiki/Testing-and-Development)
+Test commands, offline dependencies and contributor guidance:
+[Testing and Development](https://github.com/MOSconfig/bufferline.nvim/wiki/Testing-and-Development)
 and [Documentation Pipeline](https://github.com/MOSconfig/bufferline.nvim/wiki/Documentation-Pipeline).

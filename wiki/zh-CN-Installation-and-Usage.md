@@ -10,6 +10,12 @@
 
 ## 安装
 
+使用本 fork 的多行功能，请选择 `MOSconfig/bufferline.nvim` 的 `main` 分支。
+[多行 buffer 标签](zh-CN-Multiline-Buffer-Tabs)指南提供完整的 lazy.nvim 示例、配置选项和
+兼容性说明。已有上游 bufferline 声明时，请替换该声明，不要同时安装两份插件。
+
+以下示例安装的是**上游单行 bufferline**，而不是本 fork 的多行功能。
+
 建议固定某个 tag，并在检查变更后手动升级。若需要兼容 nvim-0.6.1 及更低版本，请使用
 `tag = "v1.*"`。
 
