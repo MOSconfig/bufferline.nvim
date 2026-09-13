@@ -39,6 +39,7 @@ The documentation pipeline has its own stdlib-only tests:
 ```sh
 python3 scripts/gen_help.py --check   # generated help is in sync
 python3 scripts/test_docs.py          # drift, link and image parity
+python3 scripts/test_wiki_sync.py     # wiki publishing safety
 ```
 
 See [Documentation Pipeline](Documentation-Pipeline).
@@ -58,3 +59,18 @@ See [Documentation Pipeline](Documentation-Pipeline).
 Contributors and AI coding agents should read
 [AGENTS.md](https://github.com/MOSconfig/bufferline.nvim/blob/HEAD/AGENTS.md) for
 architecture, compatibility boundaries, ownership safety and PR workflow.
+
+Start with the guide's read-only preflight and task map. It points from setup, layout,
+rendering and input tasks to the matching modules and regression suites. `CLAUDE.md`
+loads that shared guide; keep agent rules there rather than copying them into several
+provider-specific instruction files.
+
+For prose-only changes, run the three documentation checks above and `git diff --check`.
+For Lua changes, add a failing regression, run the focused suite, then the full suite.
+UI and input changes also need isolated interactive testing, not just headless tests.
+Keep machine-specific paths, downloaded dependencies and test output out of commits.
+
+README files are bilingual feature introductions. Put detailed settings and runnable
+examples in the paired wiki pages, and reference behavior in `wiki/help/`. The existing
+release workflow publishes the Markdown pages from `wiki/` after validation; local
+edits alone do not update GitHub's wiki. See [Documentation Pipeline](Documentation-Pipeline).

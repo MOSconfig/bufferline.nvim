@@ -8,12 +8,31 @@ Reference: `:help bufferline-multiline`.
 
 ## Trying it
 
-No release version is specified for this feature. Target this fork's branch, not an
-upstream tag:
+Multiline is available on this fork's `main` branch, not in upstream tags. Use this
+standalone lazy.nvim spec for a fresh configuration:
 
 ```lua
-{ "MOSconfig/bufferline.nvim", branch = "feat/multiline-buffer-tabs", dependencies = "nvim-tree/nvim-web-devicons" }
+{
+  "MOSconfig/bufferline.nvim",
+  branch = "main",
+  dependencies = "nvim-tree/nvim-web-devicons",
+  init = function()
+    vim.opt.termguicolors = true
+  end,
+  opts = {
+    options = {
+      mode = "buffers",
+      multiline = { enabled = true, max_rows = 3 },
+    },
+  },
+}
 ```
+
+If you already configure bufferline, replace its plugin source and merge these options
+into your existing complete configuration; do not register two copies of the plugin.
+The README preview uses a custom colorscheme and slanted separators. Add
+`separator_style = "slant"` inside `options` for that separator shape; the snippet above
+does not replace your colorscheme.
 
 ## Enabling
 

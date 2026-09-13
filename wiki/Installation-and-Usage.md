@@ -10,6 +10,14 @@
 
 ## Install
 
+For this fork's multiline feature, use `MOSconfig/bufferline.nvim` on `main`. The
+[Multiline Buffer Tabs](Multiline-Buffer-Tabs) guide has a complete lazy.nvim example,
+configuration options and compatibility notes. Do not install the fork alongside an
+existing upstream bufferline entry; replace that entry instead.
+
+The examples below install **upstream single-row bufferline**, not this fork's multiline
+feature.
+
 Pin a tag and bump it manually if you prefer to inspect changes before updating. For a
 version compatible with nvim-0.6.1 and below, use `tag = "v1.*"`.
 

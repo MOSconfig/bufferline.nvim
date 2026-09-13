@@ -6,11 +6,20 @@
 
 <p align="center">一个为 Neovim 打造的 <i>时髦</i> 💅 buffer 行（含标签页集成），使用 <b>lua</b> 编写。</p>
 
+本项目基于 [akinsho/bufferline.nvim](https://github.com/akinsho/bufferline.nvim)，
+新增 **[多行 buffer 标签](#多行-buffer-标签)**：在编辑区上方自动换行，同时展示更多已打开的
+buffer，并为侧边栏保留空间。原生单行模式仍是默认选项。
+
+![编辑区上方的多行斜切 buffer 标签，左侧为保持全高的文件浏览器](wiki/assets/multiline-buffer-tabs.png)
+
+原有的单行体验依然保留：
+
 ![Demo GIF](https://user-images.githubusercontent.com/22454918/111992693-9c6a9b00-8b0d-11eb-8c39-19db58583061.gif)
 
 <p align="center">
   <a href="https://github.com/MOSconfig/bufferline.nvim/wiki/zh-CN-Home">中文文档 wiki</a> ·
-  <a href="README.md">English</a>
+  <a href="README.md">English</a> ·
+  <a href="AGENTS.md">AI agent 指南</a>
 </p>
 
 <!--toc:start-->
@@ -55,27 +64,14 @@
 
 ## 安装
 
-```lua
--- using packer.nvim
-use {'akinsho/bufferline.nvim', tag = "*", requires = 'nvim-tree/nvim-web-devicons'}
-
--- using lazy.nvim
-{'akinsho/bufferline.nvim', version = "*", dependencies = 'nvim-tree/nvim-web-devicons'}
-```
-
-Vimscript 插件管理器、版本固定，以及兼容 nvim-0.6.1 的 `v1.*` tag，详见
+使用多行标签请安装本 fork。插件管理器示例与版本选择说明见
 [安装与使用](https://github.com/MOSconfig/bufferline.nvim/wiki/zh-CN-Installation-and-Usage)。
 
 ## 使用
 
-```lua
-vim.opt.termguicolors = true
-require("bufferline").setup{}
-```
-
-必须启用 `termguicolors`，因为插件会读取各高亮组的 `gui` 十六进制色值。可以点击关闭图标关闭
-buffer，也可以在标签任意位置_右键点击_。参见 `:h bufferline.nvim` 或
+配置示例与鼠标操作见
 [安装与使用](https://github.com/MOSconfig/bufferline.nvim/wiki/zh-CN-Installation-and-Usage)。
+完整离线参考手册可通过 `:help bufferline.nvim` 阅读。
 
 ## 配置
 
@@ -96,27 +92,24 @@ buffer，也可以在标签任意位置_右键点击_。参见 `:h bufferline.nv
 
 #### 多行 buffer 标签
 
-可选启用的多行渲染。要求 **Neovim 0.12+** 且 `mode = "buffers"`；原生单行渲染器仍是默认值且
-保持不变。
+不再把所有已打开的 buffer 挤进一行。本 fork 的多行 header 可选启用，根据编辑区可用宽度
+自动换行，同时让全高侧边栏保持在 header 之外，效果如上方截图所示。
 
-```lua
-{ "MOSconfig/bufferline.nvim", branch = "feat/multiline-buffer-tabs", dependencies = "nvim-tree/nvim-web-devicons" }
-```
+- **自适应行数：** header 可增长到配置的行数上限；溢出控件与鼠标滚轮可查看隐藏行，切换
+  buffer 后会自动显示当前 buffer 所在行。
+- **键盘与鼠标导航：** 在候选项之间移动，确认前不切换编辑区的 buffer；也可直接点击标签选择。
+- **熟悉的样式：** 图标、诊断信息、分组、固定标签与逐 buffer 关闭操作均支持跨行使用，也可
+  使用截图中的斜切样式。
 
-```lua
-multiline_config.options.mode = "buffers"
-multiline_config.options.multiline = { enabled = true, max_rows = 3 }
-bufferline.setup(multiline_config)
-```
+已包含在本 fork 的 **`main` 分支**中，需 **Neovim 0.12+**，且仅适用于 buffer 模式。
+原生单行模式仍是默认选项，并继续支持 Neovim 0.8+。
 
-`options.multiline.enabled` 是**唯一**的渲染器选择开关——只要它启用，原生单行就不会再出现，
-也不存在回退到它的机制。header 是编辑区上方的预留分割窗口；当它无法绘制时，仅该标签页的
-header 会被移除，且恢复由事件驱动。
+header 会占用实际分割窗口高度。自定义区域、悬停显示与原生标签页控件仅支持单行模式；保存
+内置会话前必须禁用多行模式。启用多行模式时不存在回退到原生单行的机制。
 
-完整契约——键盘映射（`h`/`j`/`k`/`l`/`x`/`<CR>`/`<Esc>`，且**不存在** `q` 映射）、退出行为、
-会话与 API 限制——详见
+安装、设置、键盘操作与生命周期限制详见
 [多行 buffer 标签](https://github.com/MOSconfig/bufferline.nvim/wiki/zh-CN-Multiline-Buffer-Tabs)
-与 `:help bufferline-multiline`。
+或 `:help bufferline-multiline`。
 
 ---
 
@@ -261,20 +254,6 @@ header 会被移除，且恢复由事件驱动。
 
 ## 测试
 
-在仓库根目录执行：
-
-```sh
-nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua', sequential = true}"
-```
-
-离线运行时，将 `NVIM_TEST_DEPS` 指向包含现有 `plenary.nvim` 与 `nvim-web-devicons` 检出目录的
-路径。测试多行功能时请使用 Neovim 0.12+。文档也有自己的、仅依赖标准库的检查：
-
-```sh
-python3 scripts/gen_help.py --check
-python3 scripts/test_docs.py
-```
-
-参见
+测试命令、离线依赖与贡献指南详见
 [测试与开发](https://github.com/MOSconfig/bufferline.nvim/wiki/zh-CN-Testing-and-Development)
 与[文档流水线](https://github.com/MOSconfig/bufferline.nvim/wiki/zh-CN-Documentation-Pipeline)。
