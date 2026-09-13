@@ -74,11 +74,10 @@ Requirements before the workflow can succeed:
    `<repo>.wiki.git` repository until the first page is saved through the web UI. Open
    the repository's **Wiki** tab and create any page once. Until then, the clone step
    fails.
-2. **A `WIKI_TOKEN` secret.** Wiki pushes are not covered by the workflow's built-in
-   `GITHUB_TOKEN`. Create a dedicated token with permission to write to this
-   repository's wiki and store it as the repository secret `WIKI_TOKEN`. The secret is
-   optional: without it, the workflow validates the sources and stops before any push,
-   rather than failing.
+2. **The built-in `GITHUB_TOKEN` with `contents: write` on the publishing job.**
+   No separate secret or personal token is needed for this repository's wiki.
+   Validation keeps read-only permissions. Authentication or publishing failures fail
+   the workflow rather than silently skipping publication.
 
 Publishing uses the exact commit SHA that passed validation, not a moving branch name.
 Symlinked source pages and symlinked destination pages are rejected. The workflow never

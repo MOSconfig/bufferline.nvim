@@ -1,14 +1,6 @@
 name: Publish wiki
 
-# Publishes the authored documentation in wiki/ to this repository's GitHub wiki.
-#
-# Prerequisites (see wiki/Documentation-Pipeline.md):
-#   1. The GitHub wiki must already be enabled AND initialized. GitHub does not
-#      create <repo>.wiki.git until the first page is saved through the web UI.
-#   2. A dedicated `WIKI_TOKEN` repository secret with permission to write this
-#      repository's wiki. The built-in GITHUB_TOKEN does not cover wiki pushes.
-#      The secret is optional: without it this workflow validates the sources and
-#      stops before any push instead of failing.
+# Initialize the repository wiki once before publishing.
 
 on:
   release:
@@ -73,6 +65,9 @@ jobs:
   publish:
     name: Publish to GitHub wiki
     needs: validate
+    permissions:
+      contents: write
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Check out the validated commit
@@ -81,23 +76,9 @@ jobs:
           ref: ${{ needs.validate.outputs.sha }}
           persist-credentials: false
 
-      - name: Check for the wiki token
-        id: token
-        env:
-          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -n "${WIKI_TOKEN:-}" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::WIKI_TOKEN is not configured; skipping the wiki push."
-          fi
-
       - name: Sync wiki pages
-        if: steps.token.outputs.present == 'true'
         env:
-          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+          WIKI_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WIKI_REMOTE: https://github.com/${{ github.repository }}.wiki.git
           WIKI_USER: ${{ github.actor }}
           SOURCE_REF: ${{ needs.validate.outputs.sha }}
@@ -172,9 +153,3 @@ jobs:
           git push --quiet origin "HEAD:${branch}"
           echo "published wiki pages to ${branch}"
           # END sync-script
-
-      - name: Report skipped push
-        if: steps.token.outputs.present != 'true'
-        run: |
-          echo "Documentation sources validated, but nothing was published."
-          echo "Add a WIKI_TOKEN repository secret to enable publishing."

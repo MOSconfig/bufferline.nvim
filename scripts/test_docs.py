@@ -497,7 +497,9 @@ def test_workflow_safety() -> None:
     check("release:" in text and "published" in text, "workflow must trigger on published releases")
     check("workflow_dispatch:" in text, "workflow must support manual dispatch")
     check("contents: read" in text, "workflow must request contents: read")
-    check("WIKI_TOKEN" in text, "workflow must use the dedicated WIKI_TOKEN secret")
+    check("WIKI_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in text, "wiki must use the built-in token")
+    check("secrets.WIKI_TOKEN" not in text, "a separate wiki secret must not be required")
+    check("contents: write" in text.split("  publish:", 1)[1], "publish job needs wiki write permission")
     check("--force" not in text, "workflow must never force-push")
     check(
         "x-access-token:${{" not in text and "@github.com/${{ secrets" not in text,
