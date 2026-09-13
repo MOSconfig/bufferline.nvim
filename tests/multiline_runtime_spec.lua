@@ -553,7 +553,7 @@ describe("Multiline runtime", function()
     end
   end)
 
-  it("restores top-level header geometry after a full-height sidebar opens", function()
+  it("keeps the header beside a full-height sidebar opened after allocation", function()
     runtime.enable(options, hooks)
     runtime.flush("test")
     local handle = runtime.handles()[api.nvim_get_current_tabpage()]
@@ -562,12 +562,153 @@ describe("Multiline runtime", function()
     vim.bo.buftype = "nofile"
     local sidebar_buf = api.nvim_win_get_buf(sidebar)
     runtime.flush("WinResized")
-    assert.equals(vim.o.columns, api.nvim_win_get_width(handle.win))
-    assert.same({ 0, 0 }, api.nvim_win_get_position(handle.win))
+    assert.equals(api.nvim_win_get_width(editor), api.nvim_win_get_width(handle.win))
+    assert.same({ 0, api.nvim_win_get_width(sidebar) + 1 }, api.nvim_win_get_position(handle.win))
+    assert.same({ 0, 0 }, api.nvim_win_get_position(sidebar))
     assert.equals(sidebar_buf, api.nvim_win_get_buf(sidebar))
     assert.equals(sidebar, api.nvim_get_current_win())
     assert.equals(editor, handle.editor)
-    assert.equals(vim.o.columns, calls[#calls].width)
+    assert.equals(api.nvim_win_get_width(handle.win), calls[#calls].width)
+  end)
+
+  it("allocates only above the editor when a full-height sidebar already exists", function()
+    vim.cmd("topleft vnew")
+    local sidebar = api.nvim_get_current_win()
+    vim.bo.buftype = "nofile"
+    api.nvim_win_set_width(sidebar, 20)
+    api.nvim_set_current_win(editor)
+    runtime.enable(options, hooks)
+    runtime.flush("test")
+    local handle = runtime.handles()[api.nvim_get_current_tabpage()]
+    assert.same({ 0, 0 }, api.nvim_win_get_position(sidebar))
+    assert.same({ 0, 21 }, api.nvim_win_get_position(handle.win))
+    assert.equals(api.nvim_win_get_width(editor), api.nvim_win_get_width(handle.win))
+    assert.equals(api.nvim_win_get_width(handle.win), calls[1].width)
+  end)
+
+  it("repairs only its own displaced header without covering the sidebar", function()
+    vim.cmd("topleft vnew")
+    local sidebar = api.nvim_get_current_win()
+    vim.bo.buftype = "nofile"
+    api.nvim_win_set_width(sidebar, 20)
+    local sidebar_buf = api.nvim_win_get_buf(sidebar)
+    api.nvim_set_current_win(editor)
+    runtime.enable(options, hooks)
+    runtime.flush("test")
+    local handle = runtime.handles()[api.nvim_get_current_tabpage()]
+    for _, config in ipairs({
+      { split = "below", win = editor },
+      { split = "above", win = -1 },
+      { relative = "editor", row = 0, col = 0, width = 20, height = 2 },
+    }) do
+      api.nvim_win_set_config(handle.win, config)
+      runtime.flush("WinResized")
+      assert.same({ 0, 0 }, api.nvim_win_get_position(sidebar))
+      assert.same({ 0, 21 }, api.nvim_win_get_position(handle.win))
+      assert.equals("", api.nvim_win_get_config(handle.win).relative)
+      assert.equals(api.nvim_win_get_width(editor), api.nvim_win_get_width(handle.win))
+      assert.equals(api.nvim_win_get_width(handle.win), calls[#calls].width)
+      assert.equals(sidebar_buf, api.nvim_win_get_buf(sidebar))
+      assert.equals(editor, api.nvim_get_current_win())
+    end
+  end)
+
+  it("keeps its region through sidebar toggles, resizing and editor/header focus changes", function()
+    runtime.enable(options, hooks)
+    runtime.flush("test")
+    local handle = runtime.handles()[api.nvim_get_current_tabpage()]
+    local win, buf = handle.win, handle.buf
+    vim.cmd("vnew")
+    local second = api.nvim_get_current_win()
+    for _ = 1, 2 do
+      vim.cmd("topleft vnew")
+      local sidebar = api.nvim_get_current_win()
+      vim.bo.buftype = "nofile"
+      local sidebar_buf = api.nvim_win_get_buf(sidebar)
+      for _, width in ipairs({ 22, 25 }) do
+        api.nvim_win_set_width(sidebar, width)
+        runtime.flush("WinResized")
+        local layout = vim.fn.winlayout()
+        for _, focus in ipairs({ editor, second, sidebar, win }) do
+          api.nvim_set_current_win(focus)
+          runtime.flush("WinEnter")
+          assert.same(layout, vim.fn.winlayout())
+          assert.same({ 0, 0 }, api.nvim_win_get_position(sidebar))
+          assert.same({ 0, width + 1 }, api.nvim_win_get_position(win))
+          assert.equals(vim.o.columns - width - 1, api.nvim_win_get_width(win))
+          assert.equals(api.nvim_win_get_width(win), calls[#calls].width)
+          assert.equals(focus, api.nvim_get_current_win())
+          assert.equals(sidebar_buf, api.nvim_win_get_buf(sidebar))
+          assert.equals(win, handle.win)
+          assert.equals(buf, handle.buf)
+        end
+      end
+      api.nvim_set_current_win(editor)
+      api.nvim_win_close(sidebar, true)
+      runtime.flush("WinResized")
+      assert.same({ 0, 0 }, api.nvim_win_get_position(win))
+      assert.equals(vim.o.columns, api.nvim_win_get_width(win))
+      assert.equals(vim.o.columns, calls[#calls].width)
+    end
+    vim.wait(30)
+    local count = #calls
+    vim.wait(30)
+    assert.equals(count, #calls)
+    assert.equals(3, #api.nvim_tabpage_list_wins(0))
+  end)
+
+  it("does not move a local header when entering other pre-existing editor splits", function()
+    vim.cmd("vnew")
+    local second = api.nvim_get_current_win()
+    runtime.enable(options, hooks)
+    runtime.flush("test")
+    local handle = runtime.handles()[api.nvim_get_current_tabpage()]
+    local position, width = api.nvim_win_get_position(handle.win), api.nvim_win_get_width(handle.win)
+    assert.equals(api.nvim_win_get_width(second), width)
+    assert.equals(width, calls[1].width)
+    for _, focus in ipairs({ editor, second, handle.win, editor }) do
+      api.nvim_set_current_win(focus)
+      runtime.flush("WinEnter")
+      assert.same(position, api.nvim_win_get_position(handle.win))
+      assert.equals(width, api.nvim_win_get_width(handle.win))
+      assert.equals(width, calls[#calls].width)
+    end
+  end)
+
+  it("does not repeatedly repair a header above an editor with a bottom utility split", function()
+    runtime.enable(options, hooks)
+    runtime.flush("test")
+    local handle = runtime.handles()[api.nvim_get_current_tabpage()]
+    vim.cmd("belowright new")
+    local utility = api.nvim_get_current_win()
+    vim.bo.buftype = "nofile"
+    api.nvim_set_current_win(editor)
+    runtime.flush("WinResized")
+    local repositions = 0
+    local set_config = api.nvim_win_set_config
+    api.nvim_win_set_config = function(win, config)
+      if win == handle.win then repositions = repositions + 1 end
+      return set_config(win, config)
+    end
+    for _ = 1, 3 do
+      runtime.flush("ui.refresh")
+    end
+    api.nvim_win_set_config = set_config
+    assert.equals(0, repositions)
+    assert.equals(handle.win, runtime.handles()[api.nvim_get_current_tabpage()].win)
+    assert.is_true(api.nvim_win_is_valid(utility))
+  end)
+
+  it("leaves no first-allocation resources when the initial frame is invalid", function()
+    local buffers = api.nvim_list_bufs()
+    frame = { valid = false, rows = {} }
+    runtime.enable(options, hooks)
+    runtime.flush("test")
+    assert.is_false(runtime.active())
+    assert.same({}, runtime.handles())
+    assert.same(buffers, api.nvim_list_bufs())
+    assert.same({ editor }, api.nvim_tabpage_list_wins(0))
+    assert.equals(2, vim.o.showtabline)
   end)
 
   it("falls back globally on an invalid frame and retries only after a resize", function()

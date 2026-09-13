@@ -107,23 +107,7 @@ function _G.nvim_bufferline()
   return bufferline()
 end
 
-local function offset_runs(text, width)
-  if width <= 0 then return { text = "", width = 0, spans = {} } end
-  local result = api.nvim_eval_statusline(text, { use_tabline = true, highlights = true, maxwidth = width })
-  local spans = {}
-  for index, highlight in ipairs(result.highlights or {}) do
-    local following = result.highlights[index + 1]
-    spans[#spans + 1] = {
-      start_col = highlight.start,
-      end_col = following and following.start or #result.str,
-      highlight = highlight.group,
-    }
-  end
-  return { text = result.str, width = width, spans = spans }
-end
-
 local function multiline_frame(width, max_rows, viewport)
-  local runtime = require("bufferline.multiline.runtime")
   local components = M.compute()
   local visible = {}
   for _, component in ipairs(components) do
@@ -133,19 +117,16 @@ local function multiline_frame(width, max_rows, viewport)
   for index, component in ipairs(visible) do
     entries[#entries + 1] = ui.multiline_entry(component, component.component(visible[index + 1]))
   end
-  local offsets = require("bufferline.offset").get(runtime.owns)
   local frame = require("bufferline.multiline.layout").plan(entries, {
     width = width,
     max_rows = max_rows,
-    left = offset_runs(offsets.left, offsets.left_size),
-    right = offset_runs(offsets.right, offsets.right_size),
     fill_hl = config.highlights.fill.hl_group,
     marker_hl = config.highlights.trunc_marker.hl_group,
   }, viewport)
   state.set({
     visible_components = frame.visible_components or {},
-    left_offset_size = offsets.left_size,
-    right_offset_size = offsets.right_size,
+    left_offset_size = 0,
+    right_offset_size = 0,
   })
   return frame
 end

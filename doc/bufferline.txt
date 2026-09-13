@@ -210,8 +210,16 @@ native-only settings can be restored without losing custom options/highlights.
 <
 `options.multiline.enabled` defaults to false. `max_rows` defaults to 3 and must
 be a positive integer. It caps buffer rows, excluding Neovim's normal split
-separator/statusline space. The header is a reserved top split, not a taller
-native tabline, so both kinds of rows reduce the editing area.
+separator/statusline space. The header is a reserved split above the editor,
+not a taller native tabline. Sidebars remain outside its area. Wrapping uses the
+header window's actual width; native sidebar offsets are not repeated here.
+The scratch buffer has filetype=bufferline. File explorers should exclude this
+filetype from replacement targets (Neo-tree: open_files_do_not_replace_types).
+
+Set tab_size with enforce_regular_tabs = true and truncate_names = true to
+adjust entry width and trim long titles. Enable show_buffer_close_icons for
+clickable per-buffer close buttons, whose behavior follows close_command.
+Modified buffers show their modification indicator instead of the close icon.
 
 Compatibility ~
 
@@ -222,8 +230,8 @@ close icons (`show_buffer_close_icons`) remain supported. Tabpage mode
 (`mode = "tabs"`), `custom_areas`, and hover reveal are unsupported. Remove custom
 areas and disable `hover.enabled` before enabling multiline.
 
-Unicode labels, icons, diagnostics, groups, pinned buffers, sidebar offsets, and
-buffer/close/group click actions work across rows. Overflow controls and the
+Unicode labels, icons, diagnostics, groups, pinned buffers, and buffer/close/group
+click actions work across rows. Nerd Font chevrons with hidden-buffer counts and the
 mouse wheel scroll rows beyond the cap. Changing the current buffer reveals its
 row. Existing user mouse mappings run first and may consume click or wheel
 events before bufferline receives them; bufferline does not override that
@@ -247,7 +255,7 @@ and overflow controls are not keyboard candidates. Candidate buffer IDs survive
 resize/repacking; removed or hidden candidates reconcile to the active buffer
 (or first available candidate). Wheel scrolling works with either editor or
 header focus and does not select a buffer. No global mappings are installed.
-The header stays a top-level split even when a full-height sidebar opens later.
+The header stays in its editor region when a full-height sidebar opens later.
 
 Restoring single-row mode ~
 

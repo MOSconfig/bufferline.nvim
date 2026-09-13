@@ -81,8 +81,8 @@ end
 local function gutter(row, width, count, direction, geometry)
   if width == 0 then return end
   if count == nil then return append(row, string.rep(" ", width), geometry.fill_hl) end
-  local text = direction == -1 and ("<" .. count) or (count .. ">")
-  local padding = string.rep(" ", width - #text)
+  local text = direction == -1 and ("" .. count) or (count .. "")
+  local padding = string.rep(" ", math.max(0, width - displaywidth(text)))
   text = direction == -1 and (text .. padding) or (padding .. text)
   append(row, text, geometry.marker_hl, { kind = "scroll", direction = direction })
 end
@@ -129,7 +129,7 @@ function M.plan(entries, geometry, viewport)
     for _, entry in ipairs(entries) do
       if entry.focusable then count = count + 1 end
     end
-    gutter_width = #tostring(count) + 2
+    gutter_width = #tostring(count) + math.max(displaywidth(""), displaywidth("")) + 1
     width = width - gutter_width * 2
     if width <= 0 then return invalid_frame() end
     packed = pack(entries, width)

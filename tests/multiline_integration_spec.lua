@@ -113,7 +113,7 @@ describe("Multiline integration", function()
     assert.is_truthy(text:find("[+]", 1, true))
   end)
 
-  it("preserves sidebars and their label on each header row", function()
+  it("preserves a full-height sidebar beside editor-only rows without offsets", function()
     add_buffers(6)
     local editor = api.nvim_get_current_win()
     vim.cmd("topleft vnew")
@@ -127,10 +127,15 @@ describe("Multiline integration", function()
     enable({ offsets = { { filetype = "multiline_test_sidebar", text = "Explorer", text_align = "left" } } })
     assert.same(20, api.nvim_win_get_width(sidebar))
     assert.same(editor, api.nvim_get_current_win())
-    for _, row in ipairs(api.nvim_buf_get_lines(header().buf, 0, -1, false)) do
-      assert.is_truthy(row:sub(1, 20):find("Explorer", 1, true))
+    local h = header()
+    assert.same({ 0, 0 }, api.nvim_win_get_position(sidebar))
+    assert.same({ 0, 21 }, api.nvim_win_get_position(h.win))
+    assert.same(api.nvim_win_get_width(editor), api.nvim_win_get_width(h.win))
+    for _, row in ipairs(api.nvim_buf_get_lines(h.buf, 0, -1, false)) do
+      assert.is_nil(row:find("Explorer", 1, true))
+      assert.same(api.nvim_win_get_width(h.win), vim.fn.strdisplaywidth(row))
     end
-    assert.same(20, state.left_offset_size)
+    assert.same(0, state.left_offset_size)
   end)
 
   it("keeps the current header when invalid settings are rejected", function()

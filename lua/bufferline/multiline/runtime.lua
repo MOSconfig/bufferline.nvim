@@ -312,10 +312,17 @@ local function allocate(handle, height)
       { buffer = handle.buf, silent = true, nowait = true }
     )
   end
-  for name, value in pairs({ buftype = "nofile", bufhidden = "wipe", swapfile = false, buflisted = false }) do
+  for name, value in pairs({
+    buftype = "nofile",
+    filetype = "bufferline",
+    bufhidden = "wipe",
+    swapfile = false,
+    buflisted = false,
+  }) do
     vim.bo[handle.buf][name] = value
   end
-  handle.win = api.nvim_open_win(handle.buf, false, { split = "above", win = -1, height = height, noautocmd = true })
+  handle.win =
+    api.nvim_open_win(handle.buf, false, { split = "above", win = handle.editor, height = height, noautocmd = true })
   vim.w[handle.win][marker] = namespace
   for name, value in pairs({
     wrap = false,
@@ -337,6 +344,28 @@ local function allocate(handle, height)
   }) do
     vim.wo[handle.win][name] = value
   end
+end
+
+-- Keep the header in its split region when another editor gains focus.
+local function header_region(layout, win, tab)
+  if layout[1] == "leaf" then return false end
+  local function editors_below(node)
+    if node[1] == "leaf" then return ordinary(node[2], tab) end
+    -- Only the top edge borders the header; a bottom utility split is harmless.
+    if node[1] == "col" then return editors_below(node[2][1]) end
+    for _, child in ipairs(node[2]) do
+      if not editors_below(child) then return false end
+    end
+    return true
+  end
+  for index, child in ipairs(layout[2]) do
+    if child[1] == "leaf" and child[2] == win then
+      if layout[1] ~= "col" or index ~= 1 then return false end
+      return layout[2][2] ~= nil and editors_below(layout[2][2])
+    end
+    if header_region(child, win, tab) then return true end
+  end
+  return false
 end
 
 local function minimum_height(layout)
@@ -374,11 +403,8 @@ local function render(reason)
   end
   handle.editor = editor_for(tab, handle)
   if not handle.editor then return end
-  if
-    handle.win
-    and (api.nvim_win_get_width(handle.win) ~= vim.o.columns or api.nvim_win_get_position(handle.win)[1] ~= 0)
-  then
-    api.nvim_win_set_config(handle.win, { split = "above", win = -1 })
+  if handle.win and not header_region(vim.fn.winlayout(), handle.win, tab) then
+    api.nvim_win_set_config(handle.win, { split = "above", win = handle.editor })
   end
   local current = api.nvim_win_get_buf(handle.editor)
   local budget = vim.o.lines
@@ -395,13 +421,17 @@ local function render(reason)
     return api.nvim_win_call(
       handle.editor,
       function()
-        return hooks.frame(vim.o.columns, math.min(options.multiline.max_rows, budget), {
-          first_row = handle.first_row,
-          current_id = focused and handle.candidate or current,
-          reveal = focused
-              and (reason == "navigate" or reason == "WinEnter" or reason == "WinResized" or reason == "VimResized")
-            or not focused and (current ~= handle.last_current or reason == "WinResized" or reason == "VimResized"),
-        })
+        return hooks.frame(
+          api.nvim_win_get_width(handle.win or handle.editor),
+          math.min(options.multiline.max_rows, budget),
+          {
+            first_row = handle.first_row,
+            current_id = focused and handle.candidate or current,
+            reveal = focused
+                and (reason == "navigate" or reason == "WinEnter" or reason == "WinResized" or reason == "VimResized")
+              or not focused and (current ~= handle.last_current or reason == "WinResized" or reason == "VimResized"),
+          }
+        )
       end
     )
   end
