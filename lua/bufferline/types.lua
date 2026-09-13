@@ -21,7 +21,12 @@
 ---@alias bufferline.HoverOptions {reveal: string[], delay: integer, enabled: boolean}
 ---@alias bufferline.IconFetcherOpts {directory: boolean, path: string, extension: string, filetype: string?}
 
+---@class bufferline.MultilineOptions
+---@field enabled? boolean
+---@field max_rows? integer
+
 ---@class bufferline.Options
+---@field public multiline? bufferline.MultilineOptions
 ---@field public mode? bufferline.Mode
 ---@field public style_preset? bufferline.StylePreset | bufferline.StylePreset[]
 ---@field public view? string
@@ -204,10 +209,12 @@
 ---@field global boolean whether or not the attribute applies to other elements apart from the current one
 ---@field prefix string
 ---@field suffix string
+---@field action? {kind: string, id: integer}
 ---@field extends number how many positions the attribute extends for
 
 ---@class bufferline.Segment
 ---@field text string
+---@field plain_text? string
 ---@field highlight string
 ---@field attr bufferline.SegmentAttribute
 

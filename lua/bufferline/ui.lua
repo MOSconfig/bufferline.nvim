@@ -126,7 +126,18 @@ end
 
 local function get_marker_size(count, element_size) return count > 0 and strwidth(tostring(count)) + element_size or 0 end
 
-function M.refresh()
+function M.refresh(opts)
+  local runtime = package.loaded["bufferline.multiline.runtime"]
+  -- Refresh the selected renderer even while its header is temporarily unavailable.
+  if runtime and runtime.selected() then
+    if opts and opts.sync then
+      runtime.flush("pick")
+      vim.cmd.redraw()
+    else
+      runtime.request("refresh")
+    end
+    return
+  end
   vim.schedule(function() vim.cmd.redrawtabline() end)
 end
 
@@ -136,6 +147,7 @@ end
 ---@param component bufferline.Segment
 function M.make_clickable(func_name, id, component)
   component.attr = component.attr or {}
+  component.attr.action = { kind = func_name:gsub("^handle_", ""):gsub("_click$", ""), id = id }
   component.attr.prefix = "%" .. id .. "@v:lua.___bufferline_private." .. func_name .. "@"
   -- the %X works as a closing label. @see :h tabline
   component.attr.suffix = "%X"
@@ -375,9 +387,8 @@ end
 ---@return bufferline.Segment
 local function get_name(ctx)
   local name = utils.truncate_name(ctx.tab.name, get_max_length(ctx))
-  -- escape filenames that contain "%" as this breaks in statusline patterns
-  name = name:gsub("%%", "%%%1")
-  return { text = name, highlight = ctx.current_highlights.buffer }
+  -- Native tablines escape percent signs; buffer-backed rows need the literal name.
+  return { text = name:gsub("%%", "%%%1"), plain_text = name, highlight = ctx.current_highlights.buffer }
 end
 
 ---Create the render function that components need to position their
@@ -707,6 +718,35 @@ function M.tabline(items, tab_indicators)
     visible_components = visible_components,
     right_offset_size = right_offset_size + right_marker_size,
     left_offset_size = left_offset_size + left_marker_size,
+  }
+end
+
+function M.multiline_entry(component, segments)
+  segments = extend_highlight(vim.deepcopy(segments))
+  local global_action
+  for _, segment in ipairs(segments) do
+    if segment.attr and segment.attr.global then global_action = segment.attr.action or global_action end
+  end
+  local runs = {}
+  local last_highlight = config.highlights.fill.hl_group
+  for _, segment in ipairs(segments) do
+    last_highlight = segment.highlight or last_highlight
+    local text = segment.plain_text or segment.text or ""
+    if text ~= "" then
+      local attr = segment.attr or {}
+      runs[#runs + 1] = {
+        text = tostring(text),
+        highlight = last_highlight,
+        action = (not attr.global and attr.action) or global_action,
+      }
+    end
+  end
+  return {
+    id = component.id,
+    component = component,
+    current = component:current(),
+    focusable = component.focusable ~= false,
+    runs = runs,
   }
 end
 

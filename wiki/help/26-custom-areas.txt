@@ -1,0 +1,40 @@
+==============================================================================
+CUSTOM AREAS                                           *bufferline-custom-areas*
+
+
+You can also add custom content at the start or end of the bufferline using `custom_areas`
+this option allows a user to specify a function which should return the text and highlight for that text
+to be shown in a list of tables. For example:
+
+>lua
+    custom_areas = {
+    right = function()
+        local result = {}
+        local seve = vim.diagnostic.severity
+        local error = #vim.diagnostic.get(0, {severity = seve.ERROR})
+        local warning = #vim.diagnostic.get(0, {severity = seve.WARN})
+        local info = #vim.diagnostic.get(0, {severity = seve.INFO})
+        local hint = #vim.diagnostic.get(0, {severity = seve.HINT})
+
+        if error ~= 0 then
+            table.insert(result, {text = "  " .. error, link = "DiagnosticError"})
+        end
+
+        if warning ~= 0 then
+            table.insert(result, {text = "  " .. warning, link = "DiagnosticWarn"})
+        end
+
+        if hint ~= 0 then
+            table.insert(result, {text = "  " .. hint, link = "DiagnosticHint"})
+        end
+
+        if info ~= 0 then
+            table.insert(result, {text = "  " .. info, link = "DiagnosticInfo"})
+        end
+        return result
+    end,
+    }
+<
+
+Please note that this function will be called a lot and should be as inexpensive as possible so it does
+not block rendering the tabline.

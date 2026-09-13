@@ -1,0 +1,45 @@
+==============================================================================
+LSP DIAGNOSTICS                                         *bufferline-diagnostics*
+
+By setting `diagnostics = "nvim_lsp" | "coc"` you will get an indicator in the
+bufferline for a given tab if it has any errors This will allow you to
+tell at a glance if a particular buffer has errors. Currently only the
+native neovim lsp is supported, mainly because it has the easiest API for
+fetching all errors for all buffers (with an attached lsp client) This
+feature is _WIP_ so beware and report any issues if you find any.
+
+In order to customise the appearance of the diagnostic count you can pass
+a custom function in your setup.
+
+>lua
+    -- rest of config ...
+
+    --- count is an integer representing total count of errors
+    --- level is a string "error" | "warning"
+    --- this should return a string
+    --- Don't get too fancy as this function will be executed a lot
+    diagnostics_indicator = function(count, level)
+        local icon = level:match("error") and " " or " "
+        return " " .. icon .. count
+    end
+<
+
+The highlighting for the filename if there is an error can be changed by
+replacing the highlights for `error`, `error_visible`, `error_selected`,
+`warning`, `warning_visible`, `warning_selected`.
+
+The diagnostics indicator can be set to `false` to remove the indicators
+completely whilst still keeping the highlight of the buffer name.
+
+LSP indicators can additionally be reported conditionally, based on buffer
+context. For instance, you could disable reporting LSP indicators for the
+current buffer and only have them appear for other buffers.
+>lua
+    diagnostics_indicator = function(count, level, diagnostics_dict, context)
+        if context.buffer:current() then
+            return ''
+        end
+
+        return ' '
+    end
+<

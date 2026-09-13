@@ -16,18 +16,30 @@ function M.reset() M.current = {} end
 ---@param func fun(id: number)
 function M.choose_then(func)
   state.is_picking = true
-  ui.refresh()
-  -- NOTE: handle keyboard interrupts by catching any thrown errors
-  local ok, char = pcall(fn.getchar)
-  if ok then
+  local ok, err = xpcall(function()
+    ui.refresh({ sync = true })
+    local runtime = package.loaded["bufferline.multiline.runtime"]
+    if runtime and runtime.selected() then
+      local handle = runtime.handles()[vim.api.nvim_get_current_tabpage()]
+      if not handle or not runtime.owns(handle.win) then
+        vim.notify("bufferline: cannot pick while the multiline header is unavailable", vim.log.levels.WARN)
+        return
+      end
+    end
+    local read, char = pcall(fn.getchar)
+    if not read then return end
     local letter = fn.nr2char(char)
     for _, item in ipairs(state.components) do
       local element = item:as_element()
-      if element and letter == element.letter then func(element.id) end
+      if element and letter == element.letter then
+        func(element.id)
+        break
+      end
     end
-  end
+  end, debug.traceback)
   state.is_picking = false
   ui.refresh()
+  if not ok then error(err, 0) end
 end
 
 ---@param element bufferline.Tab|bufferline.Buffer

@@ -1,0 +1,33 @@
+==============================================================================
+MOUSE ACTIONS                                     *bufferline-mouse-actions*
+
+You can configure different type of mouse clicks to behave differently. The
+current mouse click types are
+
+* Left - `left_mouse_command`
+* Right - `right_mouse_command`
+* Middle - `middle_mouse_command`
+* Close - `close_command`
+
+Currently left mouse opens the selected buffer but the command can be tweaked
+using `left_mouse_command` which can be specified as either a lua function or
+string which uses lua's printf style string formatting (https://www.lua.org/pil/20.html)
+e.g. `buffer %d`
+
+You can do things like open a vertical split on right clicking the buffer name
+for example using.
+>lua
+    right_mouse_command = "vertical sbuffer %d"
+<
+
+Or you can set the value to a function and handle the click action however you
+please for example you can use another plugin such as `bufdelete.nvim`
+(https://github.com/famiu/bufdelete.nvim) to handle closing the buffer using
+the `close_command`.
+>lua
+    left_mouse_command = function(bufnum)
+        require('bufdelete').bufdelete(bufnum, true)
+    end
+<
+You can also set this value to an empty string or to `false` to disable the
+action.

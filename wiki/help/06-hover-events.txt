@@ -1,0 +1,20 @@
+==============================================================================
+HOVER EVENTS                                           *bufferline-hover-events*
+
+You can configure bufferline to respond to hover events if you are using
+version 0.8 of neovim or higher. In order to enable this feature. You must
+first enable the |'mousemoveevent'| vim option and then add the item that you
+would like to hide/reveal on hover to your config and set `enable = true` i.e.
+NOTE: currently only hiding/revealing the buffer close icon is possible.
+>lua
+    options = {
+        hover = {
+            enabled = true,
+            delay = 200,
+            reveal = {'close'}
+        }
+    }
+<
+
+With the above configuration, the hover events will be emitted after hovering for `200ms`
+and the close button will be hidden until you hover on it.

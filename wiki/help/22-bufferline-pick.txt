@@ -1,0 +1,33 @@
+==============================================================================
+BUFFERLINE PICK                                            *bufferline-pick*
+
+Using the `BufferLinePick` command will allow for easy selection of a buffer
+in view. Trigger the command, using `:BufferLinePick` or better still map this
+to a key, e.g. >vim
+
+    nnoremap <silent> gb :BufferLinePick<CR>
+<
+then pick a buffer by typing the character for that specific buffer that
+appears
+
+This functionality can also be used to close a buffer using
+`BufferLinePickClose` by triggering this command the same selection UI will
+appear but on selecting a buffer it will be closed.
+
+this can also be mapped to something like
+>vim
+  nnoremap <silent> gD :BufferLinePickClose<CR>
+>
+
+You can configure the characters used for selecting buffers using the
+`pick.alphabet` option. By default, both uppercase and lowercase
+alphanumeric characters are used.
+>lua
+    options = {
+        pick = {
+            alphabet = "abcdefghijklmopqrstuvwxyz"
+        }
+    }
+<
+
+With the configuration above, bufferline will only use lowercase letters.

@@ -1,0 +1,82 @@
+==============================================================================
+MAPPINGS                                               *bufferline-mappings*
+
+`BufferLineGoToBuffer`
+
+You can select a buffer by it's visible position in the bufferline using the `BufferLineGoToBuffer`
+command. This means that if you have 60 buffers open but only 7 visible in the bufferline
+using `BufferLineGoToBuffer 4` will go to the 4th visible buffer but not necessarily the 5th in the
+absolute list of open buffers. To select the last visible buffer, you can also use `BufferLineGoToBuffer -1`.
+>
+
+  <- (30) | buf31 | buf32 | buf33 | buf34 | buf35 | buf36 | buf37 (24) ->
+<
+
+Using `BufferLineGoToBuffer 4` will open `buf34` as it is the 4th visible buffer.
+
+This can then be mapped using
+
+>vim
+  nnoremap <silent><leader>1 <Cmd>BufferLineGoToBuffer 1<CR>
+  nnoremap <silent><leader>2 <Cmd>BufferLineGoToBuffer 2<CR>
+  nnoremap <silent><leader>3 <Cmd>BufferLineGoToBuffer 3<CR>
+  nnoremap <silent><leader>4 <Cmd>BufferLineGoToBuffer 4<CR>
+  nnoremap <silent><leader>5 <Cmd>BufferLineGoToBuffer 5<CR>
+  nnoremap <silent><leader>6 <Cmd>BufferLineGoToBuffer 6<CR>
+  nnoremap <silent><leader>7 <Cmd>BufferLineGoToBuffer 7<CR>
+  nnoremap <silent><leader>8 <Cmd>BufferLineGoToBuffer 8<CR>
+  nnoremap <silent><leader>9 <Cmd>BufferLineGoToBuffer 9<CR>
+  nnoremap <silent><leader>$ <Cmd>BufferLineGoToBuffer -1<CR>
+<
+
+If you'd rather map these yourself, use:
+
+>vim
+    nnoremap mymap :lua require"bufferline".go_to(num)<CR>
+
+Alternatively, if you want to instead jump to the absolute position of the
+buffer in the bufferline (as displayed by the ordinal buffer numbers), you can
+use the `lua` API to set it up using `require'bufferline'.go_to(number, absolute)`,
+where absolute is a boolean that determines whether to use the
+absolute buffer position or the visible/relative one.
+
+>vim
+  nnoremap <silent><leader>1 <cmd>lua require("bufferline").go_to(1, true)<cr>
+  nnoremap <silent><leader>2 <cmd>lua require("bufferline").go_to(2, true)<cr>
+  nnoremap <silent><leader>3 <cmd>lua require("bufferline").go_to(3, true)<cr>
+  nnoremap <silent><leader>4 <cmd>lua require("bufferline").go_to(4, true)<cr>
+  nnoremap <silent><leader>5 <cmd>lua require("bufferline").go_to(5, true)<cr>
+  nnoremap <silent><leader>6 <cmd>lua require("bufferline").go_to(6, true)<cr>
+  nnoremap <silent><leader>7 <cmd>lua require("bufferline").go_to(7, true)<cr>
+  nnoremap <silent><leader>8 <cmd>lua require("bufferline").go_to(8, true)<cr>
+  nnoremap <silent><leader>9 <cmd>lua require("bufferline").go_to(9, true)<cr>
+  nnoremap <silent><leader>$ <cmd>lua require("bufferline").go_to(-1, true)<cr>
+<
+
+You can close buffers by clicking the close icon or by right clicking the tab anywhere
+
+
+A few of this plugins commands can be mapped for ease of use. >vim
+
+    " These commands will navigate through buffers in order
+    " regardless of which mode you are using  e.g. if you change
+    " the order of buffers :bnext and :bprevious will not respect the custom ordering
+    nnoremap <silent>[b :BufferLineCycleNext<CR>
+    nnoremap <silent>b] :BufferLineCyclePrev<CR>
+
+    " These commands will move the current buffer backwards or forwards in the bufferline
+    nnoremap <silent><mymap> :BufferLineMoveNext<CR>
+    nnoremap <silent><mymap> :BufferLineMovePrev<CR>
+
+    " These commands will move the current buffer to the first or the last position in the bufferline
+    nnoremap <silent><mymap> :lua require'bufferline'.move_to(1)<CR>
+    nnoremap <silent><mymap> :lua require'bufferline'.move_to(-1)<CR>
+
+    " These commands will sort buffers by directory, language, or a custom criteria
+    nnoremap <silent>be :BufferLineSortByExtension<CR>
+    nnoremap <silent>bd :BufferLineSortByDirectory<CR>
+    nnoremap <silent><mymap> :lua require'bufferline'.sort_by(function (buf_a, buf_b) return buf_a.id < buf_b.id end)<CR>
+
+If you manually arrange your buffers using `:BufferLineMove{Prev|Next}` during an nvim session this can be persisted for the session.
+This is enabled by default but you need to ensure that your `sessionoptions+=globals` otherwise the session file will
+not track global variables which is the mechanism used to store your sort order.

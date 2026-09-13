@@ -133,6 +133,17 @@ local function iterate_col_layout(layout)
   end
 end
 
+local function without_headers(layout, owns)
+  if layout[1] == t.LEAF then return not owns(layout[2]) and layout or nil end
+  local children = {}
+  for _, child in ipairs(layout[2]) do
+    local kept = without_headers(child, owns)
+    if kept then children[#children + 1] = kept end
+  end
+  if #children == 1 then return children[1] end
+  if #children > 1 then return { layout[1], children } end
+end
+
 ---@class OffsetData
 ---@field total_size number
 ---@field left string
@@ -142,7 +153,7 @@ end
 
 ---Calculate the size of padding required to offset the bufferline
 ---@return OffsetData
-function M.get()
+function M.get(owns)
   local offsets, hls = config.options.offsets, config.highlights
   local left = ""
   local right = ""
@@ -152,7 +163,9 @@ function M.get()
   local sep_hl = highlights.hl(hls.offset_separator.hl_group)
 
   if offsets and #offsets > 0 then
-    local layout = iterate_col_layout(fn.winlayout())
+    local windows = fn.winlayout()
+    if owns then windows = without_headers(windows, owns) or { t.LEAF, api.nvim_get_current_win() } end
+    local layout = iterate_col_layout(windows)
 
     for _, offset in ipairs(offsets) do
       -- don't bother proceeding if there are no vertical splits

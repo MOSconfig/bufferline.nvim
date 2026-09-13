@@ -150,7 +150,11 @@ local group_state = {
 local function persist_pinned_buffers()
   local pinned = {}
   for buf, group in pairs(group_state.manual_groupings) do
-    if group == PINNED_ID then table.insert(pinned, api.nvim_buf_get_name(buf)) end
+    if not api.nvim_buf_is_valid(buf) then
+      group_state.manual_groupings[buf] = nil
+    elseif group == PINNED_ID then
+      table.insert(pinned, api.nvim_buf_get_name(buf))
+    end
   end
 
   if #pinned == 0 then
@@ -247,11 +251,9 @@ local function restore_pinned_buffers()
   local manual_groupings = vim.split(pinned, ",") or {}
   for _, path in ipairs(manual_groupings) do
     local buf_id = fn.bufnr(path --[[@as integer]])
-    if buf_id ~= -1 then
-      set_manual_group(buf_id, PINNED_ID)
-      persist_pinned_buffers()
-    end
+    if buf_id ~= -1 then set_manual_group(buf_id, PINNED_ID) end
   end
+  persist_pinned_buffers()
   ui.refresh()
 end
 
@@ -261,6 +263,7 @@ end
 function M.setup(conf)
   if not conf then return end
   local groups = vim.tbl_get(conf, "options", "groups", "items") or {} ---@type bufferline.Group[]
+  group_state.user_groups = {}
 
   -- if the user has already set the pinned builtin themselves
   -- then we want each group to have a priority based on it's position in the list
@@ -280,7 +283,11 @@ function M.setup(conf)
     })
   end
   -- Restore pinned buffer from the previous session
-  api.nvim_create_autocmd("SessionLoadPost", { once = true, callback = restore_pinned_buffers })
+  api.nvim_create_autocmd("SessionLoadPost", {
+    group = api.nvim_create_augroup("BufferlineGroups", { clear = true }),
+    once = true,
+    callback = restore_pinned_buffers,
+  })
 end
 
 ---Execute a command on each buffer of a group

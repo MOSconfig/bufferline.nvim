@@ -50,8 +50,7 @@ local M = {
 }
 -----------------------------------------------------------------------------//
 
---- @return string, bufferline.Segment[][]
-local function bufferline()
+function M.compute()
   local is_tabline = config:is_tabline()
   local components = is_tabline and tabpages.get_components(state) or buffers.get_components(state)
 
@@ -71,13 +70,14 @@ local function bufferline()
 
   state.set({ current_element_index = current_idx })
   components = not is_tabline and groups.render(components, sorter) or sorter(components)
-  local tabline = ui.tabline(components, tabpages.get())
+  state.set({ __components = components, components = components })
+  return components
+end
 
+--- @return string, bufferline.Segment[][]
+local function bufferline()
+  local tabline = ui.tabline(M.compute(), tabpages.get())
   state.set({
-    --- store the full unfiltered lists
-    __components = components,
-    --- Store copies without focusable/hidden elements
-    components = components,
     visible_components = tabline.visible_components,
     --- size data stored for use elsewhere e.g. hover positioning
     left_offset_size = tabline.left_offset_size,
@@ -87,8 +87,16 @@ local function bufferline()
 end
 
 --- If the item count has changed and the next tabline status is different then update it
-local function toggle_bufferline()
-  if not config.options.auto_toggle_bufferline then return end
+local function toggle_bufferline(saved)
+  local runtime = package.loaded["bufferline.multiline.runtime"]
+  if runtime and runtime.selected() then
+    vim.o.showtabline = 0
+    return
+  end
+  if not config.options.auto_toggle_bufferline then
+    if saved ~= nil then vim.o.showtabline = saved end
+    return
+  end
   local item_count = config:is_tabline() and utils.get_tab_count() or utils.get_buf_count()
   local status = (config.options.always_show_bufferline or item_count > 1) and 2 or 0
   if vim.o.showtabline ~= status then vim.o.showtabline = status end
@@ -96,8 +104,34 @@ end
 
 ---@private
 function _G.nvim_bufferline()
+  local runtime = package.loaded["bufferline.multiline.runtime"]
+  if runtime and runtime.selected() then return "", {} end
   toggle_bufferline() -- Always populate state regardless of if tabline status is less than 2 #352
   return bufferline()
+end
+
+local function multiline_frame(width, max_rows, viewport)
+  local components = M.compute()
+  local visible = {}
+  for _, component in ipairs(components) do
+    if not component.hidden then visible[#visible + 1] = component end
+  end
+  local entries = {}
+  for index, component in ipairs(visible) do
+    entries[#entries + 1] = ui.multiline_entry(component, component.component(visible[index + 1]))
+  end
+  local frame = require("bufferline.multiline.layout").plan(entries, {
+    width = width,
+    max_rows = max_rows,
+    fill_hl = config.highlights.fill.hl_group,
+    marker_hl = config.highlights.trunc_marker.hl_group,
+  }, viewport)
+  state.set({
+    visible_components = frame.visible_components or {},
+    left_offset_size = 0,
+    right_offset_size = 0,
+  })
+  return frame
 end
 
 ---@param conf bufferline.Config
@@ -111,6 +145,7 @@ local function setup_autocommands(conf)
     callback = function()
       highlights.reset_icon_hl_cache()
       highlights.set_all(config.update_highlights())
+      ui.refresh()
     end,
   })
   if not options or vim.tbl_isempty(options) then return end
@@ -132,21 +167,25 @@ local function setup_autocommands(conf)
 
   api.nvim_create_autocmd("BufRead", {
     pattern = "*",
+    group = BUFFERLINE_GROUP,
     once = true,
     callback = function() vim.schedule(groups.handle_group_enter) end,
   })
 
   api.nvim_create_autocmd("BufEnter", {
     pattern = "*",
+    group = BUFFERLINE_GROUP,
     callback = function() groups.handle_group_enter() end,
   })
 
   api.nvim_create_autocmd("User", {
+    group = BUFFERLINE_GROUP,
     pattern = "BufferLineHoverOver",
     callback = function(args) ui.on_hover_over(args.buf, args.data) end,
   })
 
   api.nvim_create_autocmd("User", {
+    group = BUFFERLINE_GROUP,
     pattern = "BufferLineHoverOut",
     callback = ui.on_hover_out,
   })
@@ -192,7 +231,9 @@ end
 
 ---@param conf bufferline.UserConfig?
 function M.setup(conf)
-  conf = conf or {}
+  conf = require("bufferline.multiline.options").normalize(conf)
+  local runtime = package.loaded["bufferline.multiline.runtime"]
+  if runtime then runtime.disable() end
   config.setup(conf)
   groups.setup(conf) -- Groups must be set up before the config is applied
   local preferences = config.apply()
@@ -203,7 +244,15 @@ function M.setup(conf)
   setup_autocommands(preferences)
   setup_diagnostic_handler(preferences)
   vim.o.tabline = "%!v:lua.nvim_bufferline()"
-  toggle_bufferline()
+  if preferences.options.multiline and preferences.options.multiline.enabled then
+    require("bufferline.multiline.runtime").enable(preferences.options, {
+      frame = multiline_frame,
+      native_visibility = toggle_bufferline,
+      dispatch = commands.dispatch,
+    })
+  else
+    toggle_bufferline()
+  end
 end
 
 return M
