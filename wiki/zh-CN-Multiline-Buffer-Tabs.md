@@ -81,6 +81,8 @@ bufferline.setup(single_row)
   这部分额外空间。
 - 全高侧边栏位于 header 区域之外。换行按 header 窗口的实际宽度计算；原生的侧边栏偏移不会在
   此重复。打开或调整侧边栏不会改变已有的窗口 ID。
+- 编辑区内的终端分割窗口移动到文件窗口旁边或上方后，仍位于共享 header 下方。终端的布局
+  不会改变 buffer 操作所使用的已记住的文件窗口。
 - 该 scratch buffer 的 `filetype=bufferline`。文件浏览器应将此 filetype 排除在替换目标之外
   （Neo-tree：`open_files_do_not_replace_types`）。
 - 将 `tab_size` 与 `enforce_regular_tabs = true`、`truncate_names = true` 搭配使用，可限制

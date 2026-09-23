@@ -31,6 +31,8 @@ be a positive integer. It caps buffer rows, excluding Neovim's normal split
 separator/statusline space. The header is a reserved split above the editor,
 not a taller native tabline. Sidebars remain outside its area. Wrapping uses the
 header window's actual width; native sidebar offsets are not repeated here.
+Terminal splits in this region stay beneath the shared header when moved beside
+or above file windows. They do not become targets for file-buffer actions.
 The scratch buffer has filetype=bufferline. File explorers should exclude this
 filetype from replacement targets (Neo-tree: open_files_do_not_replace_types).
 

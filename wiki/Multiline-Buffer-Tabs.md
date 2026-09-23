@@ -88,6 +88,9 @@ custom areas and disable `hover.enabled` before enabling multiline.
 - Full-height sidebars remain outside the header area. Wrapping uses the header window's
   actual width; native sidebar offsets are not repeated there. Opening or resizing a
   sidebar keeps existing window IDs intact.
+- Terminal splits within the editor region stay beneath the shared header when moved
+  beside or above file windows. Terminal geometry does not change the remembered file
+  window used by buffer actions.
 - The scratch buffer has `filetype=bufferline`. File explorers should exclude this
   filetype from replacement targets (Neo-tree: `open_files_do_not_replace_types`).
 - Set `tab_size` with `enforce_regular_tabs = true` and `truncate_names = true` to keep

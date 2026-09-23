@@ -838,6 +838,45 @@ describe("Multiline runtime", function()
     end
   end)
 
+  it("keeps terminal splits inside the header region after movement and redraw", function()
+    start_child()
+    assert.is_true(child_lua([=[
+      local api = vim.api
+      local sidebar_buf = api.nvim_create_buf(false, true)
+      local sidebar = api.nvim_open_win(sidebar_buf, false, { split = "left", win = -1, width = 20 })
+      vim.wo[sidebar].winfixwidth = true
+      api.nvim_set_current_win(editor)
+      vim.cmd("belowright new")
+      local terminal_win, terminal_buf = api.nvim_get_current_win(), api.nvim_get_current_buf()
+      local job = vim.fn.jobstart({ vim.v.progpath, "-u", "NONE", "-i", "NONE", "-n" }, { term = true })
+      assert(job > 0)
+      local ok, err = xpcall(function()
+        local header = runtime.handles()[tab].win
+        for _, side in ipairs({ "left", "right", "above", "below" }) do
+          api.nvim_win_set_config(terminal_win, { win = editor, split = side })
+          for _ = 1, 3 do
+            api.nvim_exec_autocmds("WinResized", {})
+            runtime.flush("WinResized")
+            vim.cmd("redraw")
+            assert(runtime.handles()[tab].win == header)
+            assert(api.nvim_win_get_width(header) == vim.o.columns - api.nvim_win_get_width(sidebar) - 1,
+              "header must span the terminal and editor after moving " .. side)
+            assert(vim.deep_equal(api.nvim_win_get_position(header), { 0, 21 }))
+            assert(api.nvim_win_get_position(terminal_win)[1] > 0)
+            assert(api.nvim_get_current_win() == terminal_win)
+            assert(api.nvim_win_get_buf(terminal_win) == terminal_buf)
+            assert(api.nvim_win_get_buf(sidebar) == sidebar_buf)
+            assert(runtime.handles()[tab].editor == editor, "terminal must not become file action target")
+            assert(vim.fn.jobwait({ job }, 0)[1] == -1)
+          end
+        end
+      end, debug.traceback)
+      vim.fn.jobstop(job)
+      assert(ok, err)
+      return true
+    ]=]))
+  end)
+
   it("does not repeatedly repair a header above an editor with a bottom utility split", function()
     runtime.enable(options, hooks)
     runtime.flush("test")
