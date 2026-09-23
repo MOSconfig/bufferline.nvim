@@ -457,7 +457,12 @@ end
 local function header_region(layout, win, tab)
   if layout[1] == "leaf" then return false end
   local function editors_below(node)
-    if node[1] == "leaf" then return ordinary(node[2], tab) end
+    if node[1] == "leaf" then
+      local candidate = node[2]
+      -- Terminal splits share the layout region, but never become file-action targets.
+      return ordinary(candidate, tab)
+        or (not M.owns(candidate) and vim.bo[api.nvim_win_get_buf(candidate)].buftype == "terminal")
+    end
     -- Only the top edge borders the header; a bottom utility split is harmless.
     if node[1] == "col" then return editors_below(node[2][1]) end
     for _, child in ipairs(node[2]) do
